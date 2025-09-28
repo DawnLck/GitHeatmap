@@ -1,0 +1,108 @@
+{
+  "name": "git-heatmap",
+  "displayName": "Git Heatmap",
+  "description": "Visualize local Git activity with a GitHub-style heatmap inside VS Code.",
+  "version": "0.0.1",
+  "publisher": "your-name",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:gitHeatmap.show",
+    "onCommand:gitHeatmap.refresh",
+    "onCommand:gitHeatmap.selectRepositories"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitHeatmap.show",
+        "title": "Git Heatmap: Show",
+        "category": "Git Heatmap"
+      },
+      {
+        "command": "gitHeatmap.refresh",
+        "title": "Git Heatmap: Refresh",
+        "category": "Git Heatmap"
+      },
+      {
+        "command": "gitHeatmap.selectRepositories",
+        "title": "Git Heatmap: Select Repositories",
+        "category": "Git Heatmap"
+      }
+    ],
+    "configuration": {
+      "title": "Git Heatmap",
+      "properties": {
+        "gitHeatmap.scanMode": {
+          "type": "string",
+          "enum": ["workspace", "customPaths"],
+          "default": "workspace",
+          "markdownDescription": "Controls how Git Heatmap discovers repositories. `workspace` scans the VS Code workspace. `customPaths` (future) allows specifying additional folders."
+        },
+        "gitHeatmap.customPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Optional list of additional folders to scan when `scanMode` is set to `customPaths`."
+        },
+        "gitHeatmap.metric": {
+          "type": "string",
+          "enum": ["commits", "linesChanged", "added", "deleted"],
+          "default": "commits",
+          "markdownDescription": "Statistic to visualize in the heatmap. The MVP implements `commits`; other options are placeholders for future releases."
+        },
+        "gitHeatmap.colorScheme": {
+          "type": "string",
+          "enum": ["github", "blue", "red", "colorblind"],
+          "default": "github",
+          "markdownDescription": "Color palette for the heatmap. `github` matches GitHub's green scale by default."
+        },
+        "gitHeatmap.includeMerges": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Include merge commits when aggregating data. Defaults to false to mirror GitHub contribution counts."
+        },
+        "gitHeatmap.dateSource": {
+          "type": "string",
+          "enum": ["committer", "author"],
+          "default": "committer",
+          "markdownDescription": "Which Git date field to use when aggregating contributions."
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "gitHeatmap.show",
+          "when": "true"
+        },
+        {
+          "command": "gitHeatmap.refresh",
+          "when": "gitHeatmap.webviewVisible"
+        },
+        {
+          "command": "gitHeatmap.selectRepositories",
+          "when": "true"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}

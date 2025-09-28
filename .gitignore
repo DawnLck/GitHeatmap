@@ -1,0 +1,7 @@
+out/
+node_modules/
+.vscode/
+*.vsix
+npm-debug.log*
+yarn-error.log*
+.DS_Store
