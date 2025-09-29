@@ -4,13 +4,23 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
+export interface CommitInfo {
+  hash: string;
+  message: string;
+  author: string;
+  date: string;
+  repository: string;
+}
+
 export interface HeatmapCell {
   date: string; // ISO date YYYY-MM-DD
   commits: number;
+  commitDetails?: CommitInfo[];
 }
 
 export interface HeatmapDataset {
   cells: HeatmapCell[];
+  allCommits: CommitInfo[];
   summary: {
     repositories: number;
     totalCommits: number;
@@ -21,6 +31,18 @@ export interface HeatmapDataset {
   };
 }
 
+export interface HeatmapFilterOptions {
+  timeRange: "year" | "halfYear" | "quarter" | "month" | "custom";
+  customStartDate?: Date;
+  customEndDate?: Date;
+  userFilter: "current" | "all" | "custom";
+  customUser?: string;
+  includeMerges: boolean;
+  dateSource: "author" | "committer";
+  colorScheme: "github" | "blue" | "red" | "colorblind";
+  metric: "commits" | "linesChanged" | "added" | "deleted";
+}
+
 export interface HeatmapOptions {
   rangeStart: Date;
   rangeEnd: Date;
@@ -28,6 +50,9 @@ export interface HeatmapOptions {
   colorScheme: string;
   includeMerges: boolean;
   dateSource: "committer" | "author";
+  filterByAuthor: boolean;
+  authorEmail?: string;
+  authorName?: string;
 }
 
 /**
@@ -66,12 +91,17 @@ export class RepositoryService {
         repositories.push(folderPath);
       }
 
-      // Also check for nested git repositories
+      // Also check for nested git repositories (excluding the current folder)
       const nestedRepos = await this.findNestedGitRepositories(folderPath);
-      repositories.push(...nestedRepos);
+      // Filter out the current folder to avoid duplicates
+      const filteredNestedRepos = nestedRepos.filter(
+        (repo) => repo !== folderPath
+      );
+      repositories.push(...filteredNestedRepos);
     }
 
-    return repositories;
+    // Remove duplicates using Set
+    return [...new Set(repositories)];
   }
 
   private async isGitAvailable(): Promise<boolean> {
@@ -111,24 +141,90 @@ export class RepositoryService {
     }
   }
 
-  public getDefaultOptions(): HeatmapOptions {
-    const rangeEnd = new Date();
-    const rangeStart = new Date(rangeEnd);
-    rangeStart.setFullYear(rangeEnd.getFullYear() - 1);
-
+  public getDefaultFilterOptions(): HeatmapFilterOptions {
     const config = vscode.workspace.getConfiguration("gitHeatmap");
 
     return {
-      rangeStart,
-      rangeEnd,
+      timeRange: config.get<"year" | "halfYear" | "quarter" | "month">(
+        "defaultTimeRange",
+        "halfYear"
+      ),
+      userFilter: config.get<"current" | "all" | "custom">(
+        "defaultUserFilter",
+        "current"
+      ),
+      includeMerges: config.get<boolean>("includeMerges", false),
+      dateSource: config.get<"author" | "committer">("dateSource", "committer"),
+      colorScheme: config.get<"github" | "blue" | "red" | "colorblind">(
+        "colorScheme",
+        "github"
+      ),
       metric: config.get<"commits" | "linesChanged" | "added" | "deleted">(
         "metric",
         "commits"
       ),
-      colorScheme: config.get<string>("colorScheme", "github"),
-      includeMerges: config.get<boolean>("includeMerges", false),
-      dateSource: config.get<"committer" | "author">("dateSource", "committer"),
     };
+  }
+
+  public getDefaultOptions(): HeatmapOptions {
+    const filters = this.getDefaultFilterOptions();
+    return this.convertFiltersToOptions(filters);
+  }
+
+  private convertFiltersToOptions(
+    filters: HeatmapFilterOptions
+  ): HeatmapOptions {
+    const rangeEnd = new Date();
+    let rangeStart = new Date(rangeEnd);
+
+    // Calculate date range based on timeRange
+    switch (filters.timeRange) {
+      case "year":
+        rangeStart.setDate(rangeEnd.getDate() - 365);
+        break;
+      case "halfYear":
+        rangeStart.setDate(rangeEnd.getDate() - 180);
+        break;
+      case "quarter":
+        rangeStart.setDate(rangeEnd.getDate() - 90);
+        break;
+      case "month":
+        rangeStart.setDate(rangeEnd.getDate() - 30);
+        break;
+      case "custom":
+        if (filters.customStartDate)
+          rangeStart = new Date(filters.customStartDate);
+        if (filters.customEndDate)
+          rangeEnd.setTime(filters.customEndDate.getTime());
+        break;
+    }
+
+    // Debug logging
+    console.log(
+      `Date range: ${rangeStart.toISOString().split("T")[0]} to ${
+        rangeEnd.toISOString().split("T")[0]
+      }`
+    );
+
+    return {
+      rangeStart,
+      rangeEnd,
+      metric: filters.metric,
+      colorScheme: filters.colorScheme,
+      includeMerges: filters.includeMerges,
+      dateSource: filters.dateSource,
+      filterByAuthor: filters.userFilter !== "all",
+      authorEmail:
+        filters.userFilter === "custom" ? filters.customUser : undefined,
+    };
+  }
+
+  public async getFilteredHeatmapData(
+    filters: HeatmapFilterOptions,
+    forceRefresh = false
+  ): Promise<HeatmapDataset> {
+    const options = this.convertFiltersToOptions(filters);
+    return this.getHeatmapData(options, forceRefresh);
   }
 
   public async getHeatmapData(
@@ -146,8 +242,10 @@ export class RepositoryService {
     }
 
     const repositories = await this.discoverRepositories();
+    console.log(`Discovered repositories: ${repositories}`);
 
     if (repositories.length === 0) {
+      console.log("No repositories found, returning empty dataset");
       const emptyDataset = this.createEmptyDataset(options);
       this.setCachedData(cacheKey, emptyDataset);
       return emptyDataset;
@@ -155,9 +253,26 @@ export class RepositoryService {
 
     // Get git user info for author filtering
     const gitUser = await this.getGitUserInfo();
+    console.log(`Git user info: ${JSON.stringify(gitUser)}`);
+    console.log(
+      `Options: ${JSON.stringify({
+        rangeStart: options.rangeStart.toISOString().split("T")[0],
+        rangeEnd: options.rangeEnd.toISOString().split("T")[0],
+        filterByAuthor: options.filterByAuthor,
+        includeMerges: options.includeMerges,
+      })}`
+    );
+
+    // Warning if author filtering is enabled but no git user info
+    if (options.filterByAuthor && !gitUser.email && !gitUser.name) {
+      console.warn(
+        "Author filtering is enabled but no git user email/name found. This may result in no commits being returned."
+      );
+    }
 
     // Collect data from all repositories
     const allCommits = new Map<string, number>();
+    const allCommitDetails: CommitInfo[] = [];
     let errorCount = 0;
 
     for (const repoPath of repositories) {
@@ -168,10 +283,11 @@ export class RepositoryService {
           gitUser
         );
 
-        // Aggregate commits by date
-        for (const [date, count] of repoCommits) {
-          const currentCount = allCommits.get(date) || 0;
-          allCommits.set(date, currentCount + count);
+        // Aggregate commits by date and collect details
+        for (const commit of repoCommits) {
+          const currentCount = allCommits.get(commit.date) || 0;
+          allCommits.set(commit.date, currentCount + 1);
+          allCommitDetails.push(commit);
         }
       } catch (error) {
         errorCount++;
@@ -196,6 +312,7 @@ export class RepositoryService {
 
     const dataset = {
       cells,
+      allCommits: allCommitDetails.sort((a, b) => b.date.localeCompare(a.date)),
       summary: {
         repositories: repositories.length,
         totalCommits: cells.reduce((acc, cell) => acc + cell.commits, 0),
@@ -222,6 +339,7 @@ export class RepositoryService {
   private createEmptyDataset(options: HeatmapOptions): HeatmapDataset {
     return {
       cells: [],
+      allCommits: [],
       summary: {
         repositories: 0,
         totalCommits: 0,
@@ -253,50 +371,97 @@ export class RepositoryService {
     repoPath: string,
     options: HeatmapOptions,
     gitUser: { email: string; name: string }
-  ): Promise<Map<string, number>> {
-    const commits = new Map<string, number>();
+  ): Promise<CommitInfo[]> {
+    const commits: CommitInfo[] = [];
 
-    // Build git log command
-    const dateFormat =
-      options.dateSource === "author" ? "--author-date" : "--committer-date";
+    // Build git log command to get detailed commit info
+    const dateFormat = options.dateSource === "author" ? "%ad" : "%cd";
     const mergeFilter = options.includeMerges ? "" : "--no-merges";
-    const authorFilter = gitUser.email ? `--author="${gitUser.email}"` : "";
+    // Determine author filter based on options
+    let authorFilter = "";
+    if (options.filterByAuthor) {
+      if (options.authorEmail) {
+        // Custom user specified
+        authorFilter = `--author="${options.authorEmail}"`;
+      } else if (gitUser.email) {
+        // Use current user's email
+        authorFilter = `--author="${gitUser.email}"`;
+      } else if (gitUser.name) {
+        // Fall back to current user's name
+        authorFilter = `--author="${gitUser.name}"`;
+      } else {
+        console.warn(
+          "Author filtering requested but no git user email or name found. Skipping author filter."
+        );
+      }
+    }
 
     const since = options.rangeStart.toISOString().split("T")[0];
     const until = new Date(options.rangeEnd);
     until.setDate(until.getDate() + 1); // Include the end date
     const untilStr = until.toISOString().split("T")[0];
 
+    // Format: hash|author|date|message
+    const prettyFormat = `"%H|%an|${dateFormat}|%s"`;
+
     const command = [
       "git log",
       `--since="${since}"`,
       `--until="${untilStr}"`,
-      dateFormat,
       mergeFilter,
       authorFilter,
-      "--pretty=format:%ad",
+      `--pretty=format:${prettyFormat}`,
       "--date=short",
     ]
       .filter(Boolean)
       .join(" ");
 
     try {
-      const { stdout } = await execAsync(command, { cwd: repoPath });
+      console.log(`Executing git command: ${command}`);
+      console.log(`Repository path: ${repoPath}`);
+      console.log(`Date range: ${since} to ${untilStr}`);
 
-      // Count commits per date
+      const { stdout, stderr } = await execAsync(command, { cwd: repoPath });
+
+      console.log(`Git command output: "${stdout}"`);
+      if (stderr) {
+        console.log(`Git command stderr: "${stderr}"`);
+      }
+
+      // Parse commit details
       const lines = stdout
         .trim()
         .split("\n")
         .filter((line) => line.trim());
+
+      console.log(`Processed lines: ${lines.length}`);
+
       for (const line of lines) {
-        const date = line.trim();
-        if (date) {
-          const count = commits.get(date) || 0;
-          commits.set(date, count + 1);
+        const parts = line.split("|");
+        if (parts.length >= 4) {
+          const [hash, author, date, ...messageParts] = parts;
+          const message = messageParts.join("|"); // In case message contains "|"
+
+          commits.push({
+            hash: hash.trim(),
+            author: author.trim(),
+            date: date.trim(),
+            message: message.trim(),
+            repository: require("path").basename(repoPath),
+          });
+
+          console.log(
+            `Added commit: ${hash.substring(0, 8)} - ${message.substring(
+              0,
+              50
+            )}...`
+          );
         }
       }
     } catch (error) {
       console.warn(`Git command failed for ${repoPath}:`, error);
+      console.warn(`Failed command was: ${command}`);
+      console.warn(`Working directory: ${repoPath}`);
     }
 
     return commits;
@@ -310,6 +475,7 @@ export class RepositoryService {
       colorScheme: options.colorScheme,
       includeMerges: options.includeMerges,
       dateSource: options.dateSource,
+      filterByAuthor: options.filterByAuthor,
     });
     return `heatmap_${Buffer.from(key).toString("base64")}`;
   }
@@ -342,6 +508,35 @@ export class RepositoryService {
         timestamp: Date.now(),
       });
     }
+  }
+
+  public async getUserList(): Promise<string[]> {
+    const repositories = await this.discoverRepositories();
+    const users = new Set<string>();
+
+    for (const repoPath of repositories) {
+      try {
+        // Get all unique authors from the repository
+        const { stdout } = await execAsync(
+          'git log --pretty=format:"%an <%ae>" | sort | uniq',
+          { cwd: repoPath }
+        );
+
+        const lines = stdout
+          .trim()
+          .split("\n")
+          .filter((line) => line.trim());
+        lines.forEach((line) => {
+          if (line.trim()) {
+            users.add(line.trim());
+          }
+        });
+      } catch (error) {
+        console.warn(`Failed to get user list from ${repoPath}:`, error);
+      }
+    }
+
+    return Array.from(users).sort();
   }
 
   public clearCache(): void {

@@ -94,6 +94,11 @@
           ],
           "default": "committer",
           "markdownDescription": "Which Git date field to use when aggregating contributions."
+        },
+        "gitHeatmap.filterByAuthor": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Filter commits to show only those authored by the current Git user. Disable to show all commits in the repository."
         }
       }
     },

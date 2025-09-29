@@ -84,33 +84,443 @@ button:hover {
 }
 
 .heatmap {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-rows: 14px;
-  grid-template-columns: repeat(53, minmax(14px, 14px));
-  gap: 4px;
-  align-items: start;
+  overflow-x: auto;
+  padding: 8px 0;
 }
 
-.heatmap__cell {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
+/* Calendar Container */
+.calendar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: fit-content;
+}
+
+/* Month Labels */
+.month-labels {
+  display: flex;
+  padding-left: 24px; /* Align with weekday labels */
+  gap: 3px;
+}
+
+.month-label {
+  width: 11px;
+  height: 16px;
+  font-size: 10px;
+  color: var(--foreground);
+  opacity: 0.7;
+  text-align: center;
+  line-height: 16px;
+}
+
+/* Calendar Grid */
+.calendar-grid {
+  display: flex;
+  gap: 3px;
+}
+
+/* Weekday Labels */
+.weekday-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 20px;
+  margin-right: 4px;
+}
+
+.weekday-label {
+  width: 20px;
+  height: 11px;
+  font-size: 9px;
+  color: var(--foreground);
+  opacity: 0.7;
+  text-align: right;
+  line-height: 11px;
+  padding-right: 4px;
+}
+
+/* Week Columns */
+.week-column {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Calendar Cells */
+.calendar-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
   background: var(--fill, #ebedf0);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  transition: transform 120ms ease;
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  transition: all 120ms ease;
+  cursor: pointer;
 }
 
-.heatmap__cell:hover,
-.heatmap__cell:focus {
-  transform: scale(1.15);
+.calendar-cell:hover,
+.calendar-cell:focus {
+  transform: scale(1.2);
   outline: 1px solid var(--accent);
   outline-offset: 1px;
+  z-index: 10;
+  position: relative;
+}
+
+.calendar-cell.empty-cell {
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.calendar-cell.empty-cell:hover {
+  transform: none;
+  outline: none;
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+.legend-label {
+  color: var(--foreground);
+  opacity: 0.7;
+  margin: 0 2px;
+}
+
+.legend-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.03);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .calendar-cell,
+  .legend-cell {
+    width: 9px;
+    height: 9px;
+  }
+
+  .month-label,
+  .weekday-label {
+    font-size: 8px;
+  }
+
+  .legend {
+    font-size: 10px;
+  }
+}
+
+/* Dark Theme Adjustments */
+@media (prefers-color-scheme: dark) {
+  .calendar-cell,
+  .legend-cell {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
 }
 
 .empty {
   opacity: 0.7;
   font-style: italic;
+}
+
+/* Filters Section */
+.filters {
+  margin: 16px 0 24px 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.filter-row,
+.advanced-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.filter-group label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--foreground);
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.filter-group select,
+.filter-group input[type="text"] {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 13px;
+  min-height: 32px;
+  transition: all 120ms ease;
+}
+
+.filter-group select:focus,
+.filter-group input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(14, 99, 156, 0.1);
+}
+
+.filter-group select:hover,
+.filter-group input[type="text"]:hover {
+  border-color: var(--accent);
+}
+
+.filter-group select:disabled,
+.filter-group input[type="text"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checkbox-group {
+  align-self: center;
+  margin-top: 8px;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* Advanced Filters */
+.advanced-filters {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.advanced-filters summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+  opacity: 0.8;
+  padding: 4px 0;
+  user-select: none;
+  transition: opacity 120ms ease;
+}
+
+.advanced-filters summary:hover {
+  opacity: 1;
+}
+
+.advanced-filters[open] summary {
+  margin-bottom: 12px;
+  opacity: 1;
+}
+
+.advanced-row {
+  margin-top: 12px;
+}
+
+/* Loading Section */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  margin: 16px 0;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--foreground);
+  opacity: 0.8;
+}
+
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top: 2px solid var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive Design for Filters */
+@media (max-width: 768px) {
+  .filter-row,
+  .advanced-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .checkbox-group {
+    align-self: stretch;
+    margin-top: 0;
+  }
+}
+
+/* Commits Section */
+.commits {
+  margin-top: 24px;
+}
+
+.commits h2 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.commits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.commit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: var(--background);
+  border: 1px solid transparent;
+  transition: all 120ms ease;
+}
+
+.commit-item:hover {
+  border-color: var(--border);
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
+}
+
+.commit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.commit-hash {
+  font-family: var(
+    --vscode-editor-font-family,
+    "Monaco",
+    "Menlo",
+    "Ubuntu Mono",
+    monospace
+  );
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(14, 99, 156, 0.1);
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.commit-hash:hover {
+  background: rgba(14, 99, 156, 0.2);
+}
+
+.commit-date {
+  font-size: 11px;
+  color: var(--foreground);
+  opacity: 0.7;
+}
+
+.commit-message {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--foreground);
+  margin: 2px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.commit-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.commit-author {
+  color: var(--foreground);
+}
+
+.commit-repo {
+  color: var(--accent);
+  background: rgba(14, 99, 156, 0.08);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 10px;
+}
+
+/* Scrollbar styling for commits list */
+.commits-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.commits-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.commits-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.commits-list::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
 }
 
 .error {
