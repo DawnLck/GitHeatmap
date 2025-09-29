@@ -8,7 +8,7 @@ export interface CommitInfo {
   hash: string;
   message: string;
   author: string;
-  date: string;
+  date: string; // ISO datetime string with timezone info
   repository: string;
 }
 
@@ -285,8 +285,11 @@ export class RepositoryService {
 
         // Aggregate commits by date and collect details
         for (const commit of repoCommits) {
-          const currentCount = allCommits.get(commit.date) || 0;
-          allCommits.set(commit.date, currentCount + 1);
+          // Extract date part from full datetime for aggregation
+          const commitDate = new Date(commit.date);
+          const dateStr = commitDate.toISOString().split("T")[0];
+          const currentCount = allCommits.get(dateStr) || 0;
+          allCommits.set(dateStr, currentCount + 1);
           allCommitDetails.push(commit);
         }
       } catch (error) {
@@ -411,7 +414,7 @@ export class RepositoryService {
       mergeFilter,
       authorFilter,
       `--pretty=format:${prettyFormat}`,
-      "--date=short",
+      "--date=iso-strict-local",
     ]
       .filter(Boolean)
       .join(" ");

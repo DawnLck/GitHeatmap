@@ -510,10 +510,7 @@ function renderCommitsList(commits) {
         hour: "2-digit",
         minute: "2-digit",
       };
-      const formattedDate = commitDate.toLocaleDateString(
-        "en-US",
-        formatOptions
-      );
+      const formattedDate = commitDate.toLocaleString("en-US", formatOptions);
 
       return `
       <div class="commit-item">
