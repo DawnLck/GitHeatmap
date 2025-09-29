@@ -292,9 +292,9 @@ export class RepositoryService {
 
     // Debug logging
     console.log(
-      `Date range: ${rangeStart.toISOString().split("T")[0]} to ${
-        rangeEnd.toISOString().split("T")[0]
-      }`
+      `Date range: ${this.formatLocalDate(
+        rangeStart
+      )} to ${this.formatLocalDate(rangeEnd)}`
     );
 
     return {
@@ -347,8 +347,8 @@ export class RepositoryService {
     console.log(`Git user info: ${JSON.stringify(gitUser)}`);
     console.log(
       `Options: ${JSON.stringify({
-        rangeStart: options.rangeStart.toISOString().split("T")[0],
-        rangeEnd: options.rangeEnd.toISOString().split("T")[0],
+        rangeStart: this.formatLocalDate(options.rangeStart),
+        rangeEnd: this.formatLocalDate(options.rangeEnd),
         filterByAuthor: options.filterByAuthor,
         includeMerges: options.includeMerges,
       })}`
@@ -378,7 +378,7 @@ export class RepositoryService {
         for (const commit of repoCommits) {
           // Extract date part from full datetime for aggregation
           const commitDate = new Date(commit.date);
-          const dateStr = commitDate.toISOString().split("T")[0];
+          const dateStr = this.formatLocalDate(commitDate);
           const currentCount = allCommits.get(dateStr) || 0;
           allCommits.set(dateStr, currentCount + 1);
           allCommitDetails.push(commit);
@@ -398,7 +398,7 @@ export class RepositoryService {
     const endDate = new Date(options.rangeEnd);
 
     while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split("T")[0];
+      const dateStr = this.formatLocalDate(currentDate);
       const commits = allCommits.get(dateStr) || 0;
       cells.push({ date: dateStr, commits });
       currentDate.setDate(currentDate.getDate() + 1);
@@ -410,8 +410,8 @@ export class RepositoryService {
       summary: {
         repositories: repositories.length,
         totalCommits: cells.reduce((acc, cell) => acc + cell.commits, 0),
-        rangeStart: options.rangeStart.toISOString().split("T")[0],
-        rangeEnd: options.rangeEnd.toISOString().split("T")[0],
+        rangeStart: this.formatLocalDate(options.rangeStart),
+        rangeEnd: this.formatLocalDate(options.rangeEnd),
         metric: options.metric,
         colorScheme: options.colorScheme,
       },
@@ -437,8 +437,8 @@ export class RepositoryService {
       summary: {
         repositories: 0,
         totalCommits: 0,
-        rangeStart: options.rangeStart.toISOString().split("T")[0],
-        rangeEnd: options.rangeEnd.toISOString().split("T")[0],
+        rangeStart: this.formatLocalDate(options.rangeStart),
+        rangeEnd: this.formatLocalDate(options.rangeEnd),
         metric: options.metric,
         colorScheme: options.colorScheme,
       },
@@ -490,10 +490,10 @@ export class RepositoryService {
       }
     }
 
-    const since = options.rangeStart.toISOString().split("T")[0];
+    const since = this.formatLocalDate(options.rangeStart);
     const until = new Date(options.rangeEnd);
     until.setDate(until.getDate() + 1); // Include the end date
-    const untilStr = until.toISOString().split("T")[0];
+    const untilStr = this.formatLocalDate(until);
 
     // Format: hash|author|date|message
     const prettyFormat = `"%H|%an|${dateFormat}|%s"`;
@@ -631,6 +631,17 @@ export class RepositoryService {
     }
 
     return Array.from(users).sort();
+  }
+
+  /**
+   * Format date to YYYY-MM-DD using local timezone instead of UTC
+   * This prevents timezone conversion issues that cause commits to appear on wrong days
+   */
+  private formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   public clearCache(): void {

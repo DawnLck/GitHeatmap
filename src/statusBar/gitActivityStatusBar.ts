@@ -86,7 +86,7 @@ export class GitActivityStatusBar {
     for (let i = 0; i < this.DAYS_TO_SHOW; i++) {
       const currentDate = new Date(startDate);
       currentDate.setDate(startDate.getDate() + i);
-      const dateStr = currentDate.toISOString().split("T")[0];
+      const dateStr = this.formatLocalDate(currentDate);
 
       const cell = dataset.cells.find((c) => c.date === dateStr);
       const commits = cell?.commits || 0;
@@ -101,7 +101,7 @@ export class GitActivityStatusBar {
   }
 
   private renderActivityDisplay(activityData: DailyCommit[]): string {
-    const today = new Date().toISOString().split("T")[0];
+    const today = this.formatLocalDate(new Date());
     const todayData = activityData.find((d) => d.date === today);
     const todayCommits = todayData?.commits || 0;
     const weekCommits = activityData.reduce((sum, day) => sum + day.commits, 0);
@@ -143,7 +143,7 @@ export class GitActivityStatusBar {
   }
 
   private getTooltipText(activityData: DailyCommit[]): string {
-    const today = new Date().toISOString().split("T")[0];
+    const today = this.formatLocalDate(new Date());
     const todayData = activityData.find((d) => d.date === today);
     const todayCommits = todayData?.commits || 0;
     const weekTotal = activityData.reduce((sum, day) => sum + day.commits, 0);
@@ -208,6 +208,17 @@ export class GitActivityStatusBar {
       }
       timeout = setTimeout(() => func.apply(this, args), wait);
     };
+  }
+
+  /**
+   * Format date to YYYY-MM-DD using local timezone instead of UTC
+   * This prevents timezone conversion issues that cause commits to appear on wrong days
+   */
+  private formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   public dispose(): void {

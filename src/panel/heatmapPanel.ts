@@ -262,7 +262,6 @@ export class HeatmapPanel {
               <option value="github" selected>GitHub</option>
               <option value="blue">蓝色</option>
               <option value="red">红色</option>
-              <option value="colorblind">色盲友好</option>
             </select>
           </div>
           

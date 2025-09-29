@@ -476,7 +476,11 @@ function createLegend(palette) {
 }
 
 function formatDate(date) {
-  return date.toISOString().split("T")[0];
+  // Use local date formatting instead of UTC to prevent timezone conversion issues
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatTooltip(date, commits) {
@@ -486,7 +490,7 @@ function formatTooltip(date, commits) {
     month: "short",
     day: "numeric",
   };
-  const dateStr = date.toLocaleDateString("en-US", options);
+  const dateStr = date.toLocaleDateString(undefined, options);
   const commitText = commits === 1 ? "commit" : "commits";
   return `${dateStr}: ${commits} ${commitText}`;
 }
@@ -510,7 +514,7 @@ function renderCommitsList(commits) {
         hour: "2-digit",
         minute: "2-digit",
       };
-      const formattedDate = commitDate.toLocaleString("en-US", formatOptions);
+      const formattedDate = commitDate.toLocaleString(undefined, formatOptions);
 
       return `
       <div class="commit-item">
