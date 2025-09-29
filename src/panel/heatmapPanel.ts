@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import {
   HeatmapDataset,
+  HeatmapFilterOptions,
   RepositoryService,
 } from "../services/repositoryService";
 
@@ -41,12 +42,16 @@ export class HeatmapPanel {
 
   private readonly disposables: vscode.Disposable[] = [];
   private currentDataset: HeatmapDataset | undefined;
+  private currentFilters: HeatmapFilterOptions;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly context: vscode.ExtensionContext,
     private readonly repositoryService: RepositoryService
   ) {
+    // Initialize with default filters
+    this.currentFilters = this.repositoryService.getDefaultFilterOptions();
+
     this.panel.webview.html = this.getHtml();
 
     this.setContext(true);
@@ -67,10 +72,16 @@ export class HeatmapPanel {
     this.panel.webview.onDidReceiveMessage(
       (message) => {
         if (message?.command === "ready") {
-          void this.refresh();
+          void this.initializeFilters();
         }
         if (message?.command === "refresh") {
           void this.refresh();
+        }
+        if (message?.command === "updateFilters") {
+          void this.updateFilters(message.payload);
+        }
+        if (message?.command === "getUserList") {
+          void this.sendUserList();
         }
       },
       undefined,
@@ -88,21 +99,66 @@ export class HeatmapPanel {
     this.panel.dispose();
   }
 
+  private async initializeFilters(): Promise<void> {
+    // Send current filters to frontend
+    await this.postMessage({
+      command: "filtersInitialized",
+      payload: this.currentFilters,
+    });
+
+    // Load initial data
+    await this.refresh();
+  }
+
+  private async updateFilters(filters: HeatmapFilterOptions): Promise<void> {
+    this.currentFilters = { ...this.currentFilters, ...filters };
+    await this.refresh();
+  }
+
+  private async sendUserList(): Promise<void> {
+    try {
+      const users = await this.repositoryService.getUserList();
+      await this.postMessage({
+        command: "userList",
+        payload: users,
+      });
+    } catch (error) {
+      console.warn("Failed to get user list:", error);
+    }
+  }
+
   public async refresh(forceRefresh = false): Promise<void> {
     try {
-      const options = this.repositoryService.getDefaultOptions();
-      const dataset = await this.repositoryService.getHeatmapData(
-        options,
+      // Show loading state
+      await this.postMessage({
+        command: "loading",
+        payload: { isLoading: true },
+      });
+
+      const dataset = await this.repositoryService.getFilteredHeatmapData(
+        this.currentFilters,
         forceRefresh
       );
       this.currentDataset = dataset;
+
       await this.postMessage({
         command: "heatmapData",
         payload: dataset,
       });
+
+      await this.postMessage({
+        command: "loading",
+        payload: { isLoading: false },
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
+
+      await this.postMessage({
+        command: "loading",
+        payload: { isLoading: false },
+      });
+
       await this.postMessage({
         command: "error",
         payload: { message: errorMessage },
@@ -151,8 +207,76 @@ export class HeatmapPanel {
       <h1>Git Heatmap</h1>
       <button id="refreshButton" type="button">Refresh</button>
     </header>
+    
+    <section id="filters" class="filters">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label for="timeRangeSelect">📅 时间范围</label>
+          <select id="timeRangeSelect">
+            <option value="month">近一个月</option>
+            <option value="quarter">近三个月</option>
+            <option value="halfYear" selected>近六个月</option>
+            <option value="year">近一年</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="userFilterSelect">👤 用户筛选</label>
+          <select id="userFilterSelect">
+            <option value="current" selected>当前用户</option>
+            <option value="all">所有用户</option>
+            <option value="custom">自定义用户</option>
+          </select>
+        </div>
+        
+        <div class="filter-group" id="customUserGroup" style="display: none;">
+          <label for="customUserInput">用户</label>
+          <input type="text" id="customUserInput" placeholder="输入用户邮箱..." />
+        </div>
+      </div>
+      
+      <details class="advanced-filters">
+        <summary>⚙️ 高级选项</summary>
+        <div class="advanced-row">
+          <div class="filter-group">
+            <label for="colorSchemeSelect">🎨 颜色主题</label>
+            <select id="colorSchemeSelect">
+              <option value="github" selected>GitHub</option>
+              <option value="blue">蓝色</option>
+              <option value="red">红色</option>
+              <option value="colorblind">色盲友好</option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label for="dateSourceSelect">📍 日期源</label>
+            <select id="dateSourceSelect">
+              <option value="committer" selected>提交者日期</option>
+              <option value="author">作者日期</option>
+            </select>
+          </div>
+          
+          <div class="filter-group checkbox-group">
+            <label>
+              <input type="checkbox" id="includeMerges" />
+              包含合并提交
+            </label>
+          </div>
+        </div>
+      </details>
+    </section>
+    
+    <section id="loading" class="loading" style="display: none;">
+      <div class="loading-spinner"></div>
+      <span>正在加载数据...</span>
+    </section>
+    
     <section id="summary" class="summary"></section>
     <section id="heatmap" class="heatmap" aria-label="Contribution heatmap" role="grid"></section>
+    <section id="commits" class="commits">
+      <h2>Recent Commits</h2>
+      <div id="commitsList" class="commits-list"></div>
+    </section>
   </main>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>

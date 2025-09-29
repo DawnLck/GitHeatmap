@@ -3,7 +3,11 @@
   "displayName": "Git Heatmap",
   "description": "Visualize local Git activity with a GitHub-style heatmap inside VS Code.",
   "version": "0.0.1",
-  "publisher": "your-name",
+  "publisher": "DawnLck",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DawnLck/GitHeatmap"
+  },
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
@@ -40,7 +44,10 @@
       "properties": {
         "gitHeatmap.scanMode": {
           "type": "string",
-          "enum": ["workspace", "customPaths"],
+          "enum": [
+            "workspace",
+            "customPaths"
+          ],
           "default": "workspace",
           "markdownDescription": "Controls how Git Heatmap discovers repositories. `workspace` scans the VS Code workspace. `customPaths` (future) allows specifying additional folders."
         },
@@ -54,13 +61,23 @@
         },
         "gitHeatmap.metric": {
           "type": "string",
-          "enum": ["commits", "linesChanged", "added", "deleted"],
+          "enum": [
+            "commits",
+            "linesChanged",
+            "added",
+            "deleted"
+          ],
           "default": "commits",
           "markdownDescription": "Statistic to visualize in the heatmap. The MVP implements `commits`; other options are placeholders for future releases."
         },
         "gitHeatmap.colorScheme": {
           "type": "string",
-          "enum": ["github", "blue", "red", "colorblind"],
+          "enum": [
+            "github",
+            "blue",
+            "red",
+            "colorblind"
+          ],
           "default": "github",
           "markdownDescription": "Color palette for the heatmap. `github` matches GitHub's green scale by default."
         },
@@ -71,9 +88,17 @@
         },
         "gitHeatmap.dateSource": {
           "type": "string",
-          "enum": ["committer", "author"],
+          "enum": [
+            "committer",
+            "author"
+          ],
           "default": "committer",
           "markdownDescription": "Which Git date field to use when aggregating contributions."
+        },
+        "gitHeatmap.filterByAuthor": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Filter commits to show only those authored by the current Git user. Disable to show all commits in the repository."
         }
       }
     },
