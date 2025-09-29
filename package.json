@@ -2,8 +2,8 @@
   "name": "git-heatmap",
   "displayName": "Git Heatmap",
   "description": "Visualize local Git activity with a GitHub-style heatmap inside VS Code.",
-  "version": "0.0.2",
-  "publisher": "DawnLck",
+  "version": "0.0.3",
+  "publisher": "InfiniteEcho",
   "repository": {
     "type": "git",
     "url": "https://github.com/DawnLck/GitHeatmap"
@@ -15,10 +15,12 @@
   "categories": [
     "Other"
   ],
+  "icon": "logo.png",
   "activationEvents": [
     "onCommand:gitHeatmap.show",
     "onCommand:gitHeatmap.refresh",
-    "onCommand:gitHeatmap.selectRepositories"
+    "onCommand:gitHeatmap.selectRepositories",
+    "onCommand:gitHeatmap.resetFilters"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -36,6 +38,11 @@
       {
         "command": "gitHeatmap.selectRepositories",
         "title": "Git Heatmap: Select Repositories",
+        "category": "Git Heatmap"
+      },
+      {
+        "command": "gitHeatmap.resetFilters",
+        "title": "Git Heatmap: Reset Filter Settings",
         "category": "Git Heatmap"
       }
     ],
@@ -133,6 +140,10 @@
         },
         {
           "command": "gitHeatmap.selectRepositories",
+          "when": "true"
+        },
+        {
+          "command": "gitHeatmap.resetFilters",
           "when": "true"
         }
       ]

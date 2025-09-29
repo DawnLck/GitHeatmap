@@ -166,6 +166,97 @@ export class RepositoryService {
     };
   }
 
+  /**
+   * Save user's current filter settings to workspace state
+   */
+  public saveFilterSettings(filters: HeatmapFilterOptions): void {
+    if (!this.context) {
+      console.warn(
+        "Extension context not available, cannot save filter settings"
+      );
+      return;
+    }
+
+    try {
+      // Save to workspace state so settings are workspace-specific
+      this.context.workspaceState.update("gitHeatmap.savedFilters", {
+        timeRange: filters.timeRange,
+        userFilter: filters.userFilter,
+        customUser: filters.customUser,
+        includeMerges: filters.includeMerges,
+        dateSource: filters.dateSource,
+        colorScheme: filters.colorScheme,
+        metric: filters.metric,
+        // Add timestamp for potential future cleanup
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error("Failed to save filter settings:", error);
+    }
+  }
+
+  /**
+   * Load previously saved filter settings, falling back to defaults
+   */
+  public loadFilterSettings(): HeatmapFilterOptions {
+    if (!this.context) {
+      console.log("Extension context not available, using default settings");
+      return this.getDefaultFilterOptions();
+    }
+
+    try {
+      const savedSettings = this.context.workspaceState.get<{
+        timeRange?: "year" | "halfYear" | "quarter" | "month";
+        userFilter?: "current" | "all" | "custom";
+        customUser?: string;
+        includeMerges?: boolean;
+        dateSource?: "author" | "committer";
+        colorScheme?: "github" | "blue" | "red" | "colorblind";
+        metric?: "commits" | "linesChanged" | "added" | "deleted";
+        timestamp?: number;
+      }>("gitHeatmap.savedFilters");
+
+      if (savedSettings) {
+        console.log("Loaded saved filter settings:", savedSettings);
+
+        // Merge saved settings with defaults to handle any missing properties
+        const defaultSettings = this.getDefaultFilterOptions();
+        return {
+          timeRange: savedSettings.timeRange ?? defaultSettings.timeRange,
+          userFilter: savedSettings.userFilter ?? defaultSettings.userFilter,
+          customUser: savedSettings.customUser ?? defaultSettings.customUser,
+          includeMerges:
+            savedSettings.includeMerges ?? defaultSettings.includeMerges,
+          dateSource: savedSettings.dateSource ?? defaultSettings.dateSource,
+          colorScheme: savedSettings.colorScheme ?? defaultSettings.colorScheme,
+          metric: savedSettings.metric ?? defaultSettings.metric,
+        };
+      }
+    } catch (error) {
+      console.error("Failed to load filter settings:", error);
+    }
+
+    // Fallback to defaults if no saved settings or error occurred
+    console.log("No saved filter settings found, using defaults");
+    return this.getDefaultFilterOptions();
+  }
+
+  /**
+   * Clear saved filter settings (reset to defaults)
+   */
+  public clearSavedFilterSettings(): void {
+    if (!this.context) {
+      return;
+    }
+
+    try {
+      this.context.workspaceState.update("gitHeatmap.savedFilters", undefined);
+      console.log("Cleared saved filter settings");
+    } catch (error) {
+      console.error("Failed to clear filter settings:", error);
+    }
+  }
+
   public getDefaultOptions(): HeatmapOptions {
     const filters = this.getDefaultFilterOptions();
     return this.convertFiltersToOptions(filters);

@@ -2,13 +2,6 @@
 
 Git Heatmap surfaces a GitHub-style contribution calendar directly inside Visual Studio Code by scanning local Git repositories. The extension runs fully offline, aggregates commit counts per day, and renders an interactive heatmap so you can review activity without leaving the editor.
 
-## Current Status
-
-- **Stage**: Skeleton implementation
-- **Default scope**: Workspace repositories
-- **Default metric**: Commit count per day (committer date)
-- **Default palette**: GitHub green scale
-
 ## Commands
 
 - `Git Heatmap: Show` – open the heatmap panel.
