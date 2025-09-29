@@ -2,9 +2,19 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { HeatmapPanel } from "./panel/heatmapPanel";
 import { RepositoryService } from "./services/repositoryService";
+import { GitActivityStatusBar } from "./statusBar/gitActivityStatusBar";
 
 export function activate(context: vscode.ExtensionContext): void {
   const repositoryService = new RepositoryService(vscode.workspace, context);
+
+  // Initialize status bar activity indicator
+  let statusBarActivity: GitActivityStatusBar | undefined;
+  const config = vscode.workspace.getConfiguration("gitHeatmap");
+  const statusBarEnabled = config.get<boolean>("statusBar.enabled", true);
+
+  if (statusBarEnabled) {
+    statusBarActivity = new GitActivityStatusBar(context, repositoryService);
+  }
 
   const showCommand = vscode.commands.registerCommand("gitHeatmap.show", () => {
     HeatmapPanel.createOrShow(context, repositoryService);
@@ -18,6 +28,11 @@ export function activate(context: vscode.ExtensionContext): void {
         await panel.refresh(true); // Force refresh
       } else {
         HeatmapPanel.createOrShow(context, repositoryService);
+      }
+
+      // Also refresh status bar
+      if (statusBarActivity) {
+        await statusBarActivity.updateActivity();
       }
     }
   );
@@ -54,13 +69,45 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
 
+  // Configuration change handler
+  const configChangeHandler = vscode.workspace.onDidChangeConfiguration(
+    (event) => {
+      if (event.affectsConfiguration("gitHeatmap.statusBar.enabled")) {
+        const newEnabled = vscode.workspace
+          .getConfiguration("gitHeatmap")
+          .get<boolean>("statusBar.enabled", true);
+
+        if (newEnabled && !statusBarActivity) {
+          // Enable status bar
+          statusBarActivity = new GitActivityStatusBar(
+            context,
+            repositoryService
+          );
+        } else if (!newEnabled && statusBarActivity) {
+          // Disable status bar
+          statusBarActivity.dispose();
+          statusBarActivity = undefined;
+        }
+      }
+
+      // Handle display mode changes
+      if (
+        event.affectsConfiguration("gitHeatmap.statusBar.displayMode") &&
+        statusBarActivity
+      ) {
+        statusBarActivity.updateActivity();
+      }
+    }
+  );
+
   context.subscriptions.push(
     showCommand,
     refreshCommand,
-    selectRepositoriesCommand
+    selectRepositoriesCommand,
+    configChangeHandler
   );
 }
 
 export function deactivate(): void {
-  // no-op for now
+  // Cleanup is handled by context.subscriptions
 }

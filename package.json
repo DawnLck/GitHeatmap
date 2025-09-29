@@ -2,7 +2,7 @@
   "name": "git-heatmap",
   "displayName": "Git Heatmap",
   "description": "Visualize local Git activity with a GitHub-style heatmap inside VS Code.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "DawnLck",
   "repository": {
     "type": "git",
@@ -99,6 +99,25 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Filter commits to show only those authored by the current Git user. Disable to show all commits in the repository."
+        },
+        "gitHeatmap.statusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "在状态栏显示近7天的Git活动指示器"
+        },
+        "gitHeatmap.statusBar.updateInterval": {
+          "type": "number",
+          "default": 300000,
+          "markdownDescription": "状态栏更新间隔(毫秒)，默认5分钟"
+        },
+        "gitHeatmap.statusBar.displayMode": {
+          "type": "string",
+          "enum": [
+            "today",
+            "week"
+          ],
+          "default": "week",
+          "markdownDescription": "状态栏显示模式：today(今日) 或 week(本周)"
         }
       }
     },
