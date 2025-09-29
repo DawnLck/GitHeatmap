@@ -49,8 +49,8 @@ export class HeatmapPanel {
     private readonly context: vscode.ExtensionContext,
     private readonly repositoryService: RepositoryService
   ) {
-    // Initialize with default filters
-    this.currentFilters = this.repositoryService.getDefaultFilterOptions();
+    // Initialize with saved filters (falls back to defaults if no saved settings)
+    this.currentFilters = this.repositoryService.loadFilterSettings();
 
     this.panel.webview.html = this.getHtml();
 
@@ -112,6 +112,10 @@ export class HeatmapPanel {
 
   private async updateFilters(filters: HeatmapFilterOptions): Promise<void> {
     this.currentFilters = { ...this.currentFilters, ...filters };
+
+    // Save the updated filters to persistence
+    this.repositoryService.saveFilterSettings(this.currentFilters);
+
     await this.refresh();
   }
 
@@ -125,6 +129,20 @@ export class HeatmapPanel {
     } catch (error) {
       console.warn("Failed to get user list:", error);
     }
+  }
+
+  public async reloadFilterSettings(): Promise<void> {
+    // Reload filter settings from persistence
+    this.currentFilters = this.repositoryService.loadFilterSettings();
+
+    // Send updated filters to frontend
+    await this.postMessage({
+      command: "filtersInitialized",
+      payload: this.currentFilters,
+    });
+
+    // Refresh data with new filters
+    await this.refresh(true);
   }
 
   public async refresh(forceRefresh = false): Promise<void> {
@@ -244,7 +262,6 @@ export class HeatmapPanel {
               <option value="github" selected>GitHub</option>
               <option value="blue">蓝色</option>
               <option value="red">红色</option>
-              <option value="colorblind">色盲友好</option>
             </select>
           </div>
           

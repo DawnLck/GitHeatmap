@@ -166,6 +166,97 @@ export class RepositoryService {
     };
   }
 
+  /**
+   * Save user's current filter settings to workspace state
+   */
+  public saveFilterSettings(filters: HeatmapFilterOptions): void {
+    if (!this.context) {
+      console.warn(
+        "Extension context not available, cannot save filter settings"
+      );
+      return;
+    }
+
+    try {
+      // Save to workspace state so settings are workspace-specific
+      this.context.workspaceState.update("gitHeatmap.savedFilters", {
+        timeRange: filters.timeRange,
+        userFilter: filters.userFilter,
+        customUser: filters.customUser,
+        includeMerges: filters.includeMerges,
+        dateSource: filters.dateSource,
+        colorScheme: filters.colorScheme,
+        metric: filters.metric,
+        // Add timestamp for potential future cleanup
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error("Failed to save filter settings:", error);
+    }
+  }
+
+  /**
+   * Load previously saved filter settings, falling back to defaults
+   */
+  public loadFilterSettings(): HeatmapFilterOptions {
+    if (!this.context) {
+      console.log("Extension context not available, using default settings");
+      return this.getDefaultFilterOptions();
+    }
+
+    try {
+      const savedSettings = this.context.workspaceState.get<{
+        timeRange?: "year" | "halfYear" | "quarter" | "month";
+        userFilter?: "current" | "all" | "custom";
+        customUser?: string;
+        includeMerges?: boolean;
+        dateSource?: "author" | "committer";
+        colorScheme?: "github" | "blue" | "red" | "colorblind";
+        metric?: "commits" | "linesChanged" | "added" | "deleted";
+        timestamp?: number;
+      }>("gitHeatmap.savedFilters");
+
+      if (savedSettings) {
+        console.log("Loaded saved filter settings:", savedSettings);
+
+        // Merge saved settings with defaults to handle any missing properties
+        const defaultSettings = this.getDefaultFilterOptions();
+        return {
+          timeRange: savedSettings.timeRange ?? defaultSettings.timeRange,
+          userFilter: savedSettings.userFilter ?? defaultSettings.userFilter,
+          customUser: savedSettings.customUser ?? defaultSettings.customUser,
+          includeMerges:
+            savedSettings.includeMerges ?? defaultSettings.includeMerges,
+          dateSource: savedSettings.dateSource ?? defaultSettings.dateSource,
+          colorScheme: savedSettings.colorScheme ?? defaultSettings.colorScheme,
+          metric: savedSettings.metric ?? defaultSettings.metric,
+        };
+      }
+    } catch (error) {
+      console.error("Failed to load filter settings:", error);
+    }
+
+    // Fallback to defaults if no saved settings or error occurred
+    console.log("No saved filter settings found, using defaults");
+    return this.getDefaultFilterOptions();
+  }
+
+  /**
+   * Clear saved filter settings (reset to defaults)
+   */
+  public clearSavedFilterSettings(): void {
+    if (!this.context) {
+      return;
+    }
+
+    try {
+      this.context.workspaceState.update("gitHeatmap.savedFilters", undefined);
+      console.log("Cleared saved filter settings");
+    } catch (error) {
+      console.error("Failed to clear filter settings:", error);
+    }
+  }
+
   public getDefaultOptions(): HeatmapOptions {
     const filters = this.getDefaultFilterOptions();
     return this.convertFiltersToOptions(filters);
@@ -201,9 +292,9 @@ export class RepositoryService {
 
     // Debug logging
     console.log(
-      `Date range: ${rangeStart.toISOString().split("T")[0]} to ${
-        rangeEnd.toISOString().split("T")[0]
-      }`
+      `Date range: ${this.formatLocalDate(
+        rangeStart
+      )} to ${this.formatLocalDate(rangeEnd)}`
     );
 
     return {
@@ -256,8 +347,8 @@ export class RepositoryService {
     console.log(`Git user info: ${JSON.stringify(gitUser)}`);
     console.log(
       `Options: ${JSON.stringify({
-        rangeStart: options.rangeStart.toISOString().split("T")[0],
-        rangeEnd: options.rangeEnd.toISOString().split("T")[0],
+        rangeStart: this.formatLocalDate(options.rangeStart),
+        rangeEnd: this.formatLocalDate(options.rangeEnd),
         filterByAuthor: options.filterByAuthor,
         includeMerges: options.includeMerges,
       })}`
@@ -287,7 +378,7 @@ export class RepositoryService {
         for (const commit of repoCommits) {
           // Extract date part from full datetime for aggregation
           const commitDate = new Date(commit.date);
-          const dateStr = commitDate.toISOString().split("T")[0];
+          const dateStr = this.formatLocalDate(commitDate);
           const currentCount = allCommits.get(dateStr) || 0;
           allCommits.set(dateStr, currentCount + 1);
           allCommitDetails.push(commit);
@@ -307,7 +398,7 @@ export class RepositoryService {
     const endDate = new Date(options.rangeEnd);
 
     while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split("T")[0];
+      const dateStr = this.formatLocalDate(currentDate);
       const commits = allCommits.get(dateStr) || 0;
       cells.push({ date: dateStr, commits });
       currentDate.setDate(currentDate.getDate() + 1);
@@ -319,8 +410,8 @@ export class RepositoryService {
       summary: {
         repositories: repositories.length,
         totalCommits: cells.reduce((acc, cell) => acc + cell.commits, 0),
-        rangeStart: options.rangeStart.toISOString().split("T")[0],
-        rangeEnd: options.rangeEnd.toISOString().split("T")[0],
+        rangeStart: this.formatLocalDate(options.rangeStart),
+        rangeEnd: this.formatLocalDate(options.rangeEnd),
         metric: options.metric,
         colorScheme: options.colorScheme,
       },
@@ -346,8 +437,8 @@ export class RepositoryService {
       summary: {
         repositories: 0,
         totalCommits: 0,
-        rangeStart: options.rangeStart.toISOString().split("T")[0],
-        rangeEnd: options.rangeEnd.toISOString().split("T")[0],
+        rangeStart: this.formatLocalDate(options.rangeStart),
+        rangeEnd: this.formatLocalDate(options.rangeEnd),
         metric: options.metric,
         colorScheme: options.colorScheme,
       },
@@ -399,10 +490,10 @@ export class RepositoryService {
       }
     }
 
-    const since = options.rangeStart.toISOString().split("T")[0];
+    const since = this.formatLocalDate(options.rangeStart);
     const until = new Date(options.rangeEnd);
     until.setDate(until.getDate() + 1); // Include the end date
-    const untilStr = until.toISOString().split("T")[0];
+    const untilStr = this.formatLocalDate(until);
 
     // Format: hash|author|date|message
     const prettyFormat = `"%H|%an|${dateFormat}|%s"`;
@@ -540,6 +631,17 @@ export class RepositoryService {
     }
 
     return Array.from(users).sort();
+  }
+
+  /**
+   * Format date to YYYY-MM-DD using local timezone instead of UTC
+   * This prevents timezone conversion issues that cause commits to appear on wrong days
+   */
+  private formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   public clearCache(): void {

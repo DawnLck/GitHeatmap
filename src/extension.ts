@@ -69,6 +69,31 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
 
+  const resetFiltersCommand = vscode.commands.registerCommand(
+    "gitHeatmap.resetFilters",
+    async () => {
+      const result = await vscode.window.showInformationMessage(
+        "确定要将筛选器设置重置为默认值吗？这将清除您保存的所有筛选器偏好。",
+        { modal: true },
+        "重置",
+        "取消"
+      );
+
+      if (result === "重置") {
+        // Clear saved filter settings
+        repositoryService.clearSavedFilterSettings();
+
+        // Reload filter settings and refresh the panel if it's open
+        const panel = HeatmapPanel.getInstance();
+        if (panel) {
+          await panel.reloadFilterSettings(); // Reload settings and refresh
+        }
+
+        void vscode.window.showInformationMessage("筛选器设置已重置为默认值。");
+      }
+    }
+  );
+
   // Configuration change handler
   const configChangeHandler = vscode.workspace.onDidChangeConfiguration(
     (event) => {
@@ -104,6 +129,7 @@ export function activate(context: vscode.ExtensionContext): void {
     showCommand,
     refreshCommand,
     selectRepositoriesCommand,
+    resetFiltersCommand,
     configChangeHandler
   );
 }
