@@ -38,12 +38,19 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  position: relative;
 }
 
 .header h1 {
   margin: 0;
   font-size: 18px;
   line-height: 1.2;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 button {
@@ -58,6 +65,51 @@ button {
 
 button:hover {
   background: var(--accent-hover);
+}
+
+/* Export Button and Menu */
+.export-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.export-menu {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.export-menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--foreground);
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  transition: background 0.15s ease;
+}
+
+.export-menu-item:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
+}
+
+.export-menu-item:not(:last-child) {
+  border-bottom: 1px solid var(--border);
 }
 
 .summary {
