@@ -27,6 +27,8 @@ let currentFilters = {
 };
 
 let userList = [];
+let detailPanelOpen = false;
+let currentDetailDate = null;
 
 // Event Listeners
 refreshButton?.addEventListener("click", () => {
@@ -120,6 +122,9 @@ window.addEventListener("message", (event) => {
     case "error":
       console.log("Processing error message");
       showError(message.payload.message);
+      break;
+    case "commitsForDate":
+      showCommitDetails(message.payload.date, message.payload.commits);
       break;
   }
 });
@@ -250,10 +255,16 @@ function showCellDetails(cell) {
   const value = cell.dataset.value;
   const commits = parseInt(value, 10);
 
-  // Here you could show a detailed panel
-  // For now, just show an alert
-  const message = `${date}: ${commits} ${commits === 1 ? "commit" : "commits"}`;
-  console.log("Cell details:", message);
+  if (commits === 0) {
+    return; // 没有提交就不显示详情
+  }
+
+  // Request commits for this date from backend
+  currentDetailDate = date;
+  vscode.postMessage({
+    command: "getCommitsForDate",
+    payload: date,
+  });
 }
 
 function renderHeatmap(dataset) {
@@ -558,3 +569,148 @@ function getPalette(name) {
       return ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"];
   }
 }
+
+// Show commit details panel
+function showCommitDetails(date, commits) {
+  if (!commits || commits.length === 0) {
+    return;
+  }
+
+  // Create or update detail panel
+  let detailPanel = document.getElementById("detailPanel");
+
+  if (!detailPanel) {
+    detailPanel = document.createElement("div");
+    detailPanel.id = "detailPanel";
+    detailPanel.className = "detail-panel";
+    document.body.appendChild(detailPanel);
+  }
+
+  // Format date for display
+  const dateObj = new Date(date);
+  const formattedDate = dateObj.toLocaleDateString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  // Build panel content
+  const commitItems = commits
+    .map(
+      (commit) => `
+    <div class="detail-commit-item">
+      <div class="detail-commit-header">
+        <span class="detail-commit-hash" data-hash="${
+          commit.hash
+        }" data-repo="${commit.repositoryPath}" title="${commit.hash}">${
+        commit.shortHash
+      }</span>
+        <span class="detail-commit-date">${formatCommitTime(commit.date)}</span>
+      </div>
+      <div class="detail-commit-message" title="${escapeHtml(
+        commit.message
+      )}">${escapeHtml(commit.message)}</div>
+      <div class="detail-commit-meta">
+        <span class="detail-commit-author">👤 ${escapeHtml(
+          commit.author
+        )}</span>
+        <span class="detail-commit-repo">📁 ${escapeHtml(
+          commit.repositoryName
+        )}</span>
+      </div>
+      <div class="detail-commit-actions">
+        <button class="action-btn view-diff-btn" data-hash="${
+          commit.hash
+        }" data-repo="${commit.repositoryPath}">
+          🔍 查看变更
+        </button>
+      </div>
+    </div>
+  `
+    )
+    .join("");
+
+  detailPanel.innerHTML = `
+    <div class="detail-panel-content">
+      <div class="detail-panel-header">
+        <div class="detail-panel-title">
+          <h3>📅 ${formattedDate}</h3>
+          <span class="detail-panel-count">${commits.length} 个提交</span>
+        </div>
+        <button class="detail-panel-close" id="closeDetailPanel">✕</button>
+      </div>
+      <div class="detail-panel-body">
+        ${commitItems}
+      </div>
+    </div>
+    <div class="detail-panel-backdrop"></div>
+  `;
+
+  // Add event listeners
+  const closeBtn = document.getElementById("closeDetailPanel");
+  const backdrop = detailPanel.querySelector(".detail-panel-backdrop");
+
+  closeBtn.addEventListener("click", closeDetailPanel);
+  backdrop.addEventListener("click", closeDetailPanel);
+
+  // Add view diff button listeners
+  const viewDiffBtns = detailPanel.querySelectorAll(".view-diff-btn");
+  viewDiffBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const hash = btn.dataset.hash;
+      const repo = btn.dataset.repo;
+      vscode.postMessage({
+        command: "openCommitDiff",
+        payload: { hash, repositoryPath: repo },
+      });
+    });
+  });
+
+  // Show the panel
+  detailPanel.classList.add("open");
+  detailPanelOpen = true;
+
+  // Prevent body scrolling
+  document.body.style.overflow = "hidden";
+}
+
+function closeDetailPanel() {
+  const detailPanel = document.getElementById("detailPanel");
+  if (detailPanel) {
+    detailPanel.classList.remove("open");
+    detailPanelOpen = false;
+    currentDetailDate = null;
+
+    // Restore body scrolling
+    document.body.style.overflow = "";
+
+    // Remove after animation
+    setTimeout(() => {
+      if (!detailPanelOpen) {
+        detailPanel.remove();
+      }
+    }, 300);
+  }
+}
+
+function formatCommitTime(isoDate) {
+  const date = new Date(isoDate);
+  return date.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Close detail panel on ESC key
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && detailPanelOpen) {
+    closeDetailPanel();
+  }
+});

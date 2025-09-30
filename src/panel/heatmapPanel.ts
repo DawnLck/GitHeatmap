@@ -3,6 +3,7 @@ import {
   HeatmapDataset,
   HeatmapFilterOptions,
   RepositoryService,
+  CommitDetail,
 } from "../services/repositoryService";
 
 export class HeatmapPanel {
@@ -83,6 +84,12 @@ export class HeatmapPanel {
         if (message?.command === "getUserList") {
           void this.sendUserList();
         }
+        if (message?.command === "getCommitsForDate") {
+          void this.sendCommitsForDate(message.payload);
+        }
+        if (message?.command === "openCommitDiff") {
+          void this.openCommitDiff(message.payload);
+        }
       },
       undefined,
       this.disposables
@@ -128,6 +135,73 @@ export class HeatmapPanel {
       });
     } catch (error) {
       console.warn("Failed to get user list:", error);
+    }
+  }
+
+  private async sendCommitsForDate(date: string): Promise<void> {
+    try {
+      const commits = await this.repositoryService.getCommitsForDate(
+        date,
+        this.currentFilters
+      );
+      await this.postMessage({
+        command: "commitsForDate",
+        payload: { date, commits },
+      });
+    } catch (error) {
+      console.error("Failed to get commits for date:", error);
+      await this.postMessage({
+        command: "error",
+        payload: {
+          message: `Failed to load commits for ${date}`,
+        },
+      });
+    }
+  }
+
+  private async openCommitDiff(payload: {
+    hash: string;
+    repositoryPath: string;
+  }): Promise<void> {
+    try {
+      const { hash, repositoryPath } = payload;
+
+      // Use VS Code's git extension API to show the commit
+      const gitExtension = vscode.extensions.getExtension("vscode.git");
+      if (!gitExtension) {
+        void vscode.window.showWarningMessage("Git extension is not available");
+        return;
+      }
+
+      const git = gitExtension.exports.getAPI(1);
+      const repository = git.repositories.find(
+        (repo: { rootUri: { fsPath: string } }) =>
+          repo.rootUri.fsPath === repositoryPath
+      );
+
+      if (!repository) {
+        void vscode.window.showWarningMessage(
+          `Repository not found: ${repositoryPath}`
+        );
+        return;
+      }
+
+      // Get the commit object
+      const commit = await repository.getCommit(hash);
+
+      if (commit) {
+        // Show the commit in a new editor
+        void vscode.commands.executeCommand(
+          "git.openChange",
+          commit.hash,
+          repository
+        );
+      }
+    } catch (error) {
+      console.error("Failed to open commit diff:", error);
+      void vscode.window.showWarningMessage(
+        "Failed to open commit. You can manually view it in the Source Control panel."
+      );
     }
   }
 

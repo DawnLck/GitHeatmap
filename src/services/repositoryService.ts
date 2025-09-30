@@ -12,6 +12,17 @@ export interface CommitInfo {
   repository: string;
 }
 
+export interface CommitDetail {
+  hash: string; // 完整哈希
+  shortHash: string; // 缩写哈希（7位）
+  message: string;
+  author: string;
+  date: string; // ISO datetime
+  repository: string;
+  repositoryName: string;
+  repositoryPath: string;
+}
+
 export interface HeatmapCell {
   date: string; // ISO date YYYY-MM-DD
   commits: number;
@@ -655,5 +666,125 @@ export class RepositoryService {
         }
       }
     }
+  }
+
+  /**
+   * Get detailed commits for a specific date
+   */
+  public async getCommitsForDate(
+    date: string,
+    filters: HeatmapFilterOptions
+  ): Promise<CommitDetail[]> {
+    const repositories = await this.discoverRepositories();
+
+    if (repositories.length === 0) {
+      return [];
+    }
+
+    const options = this.convertFiltersToOptions(filters);
+    const gitUser = await this.getGitUserInfo();
+    const allCommitDetails: CommitDetail[] = [];
+
+    // Parse the date and create start/end of day
+    const targetDate = new Date(date);
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    for (const repoPath of repositories) {
+      try {
+        const commits = await this.getCommitsForDateInRepository(
+          repoPath,
+          startOfDay,
+          endOfDay,
+          options,
+          gitUser
+        );
+        allCommitDetails.push(...commits);
+      } catch (error) {
+        console.warn(
+          `Failed to get commits for ${date} from ${repoPath}:`,
+          error
+        );
+      }
+    }
+
+    // Sort by date descending (most recent first)
+    return allCommitDetails.sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  private async getCommitsForDateInRepository(
+    repoPath: string,
+    startOfDay: Date,
+    endOfDay: Date,
+    options: HeatmapOptions,
+    gitUser: { email: string; name: string }
+  ): Promise<CommitDetail[]> {
+    const commits: CommitDetail[] = [];
+    const path = require("path");
+
+    // Build git log command
+    const dateFormat = options.dateSource === "author" ? "%ad" : "%cd";
+    const mergeFilter = options.includeMerges ? "" : "--no-merges";
+
+    // Author filter
+    let authorFilter = "";
+    if (options.filterByAuthor) {
+      if (options.authorEmail) {
+        authorFilter = `--author="${options.authorEmail}"`;
+      } else if (gitUser.email) {
+        authorFilter = `--author="${gitUser.email}"`;
+      } else if (gitUser.name) {
+        authorFilter = `--author="${gitUser.name}"`;
+      }
+    }
+
+    // Format: hash|shortHash|author|date|message
+    const prettyFormat = '"%H|%h|%an|' + dateFormat + '|%s"';
+
+    const command = [
+      "git log",
+      `--since="${startOfDay.toISOString()}"`,
+      `--until="${endOfDay.toISOString()}"`,
+      mergeFilter,
+      authorFilter,
+      `--pretty=format:${prettyFormat}`,
+      "--date=iso-strict-local",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    try {
+      const { stdout } = await execAsync(command, { cwd: repoPath });
+
+      const lines = stdout
+        .trim()
+        .split("\n")
+        .filter((line) => line.trim());
+
+      for (const line of lines) {
+        const parts = line.split("|");
+        if (parts.length >= 5) {
+          const [hash, shortHash, author, date, ...messageParts] = parts;
+          const message = messageParts.join("|");
+
+          commits.push({
+            hash: hash.trim(),
+            shortHash: shortHash.trim(),
+            author: author.trim(),
+            date: date.trim(),
+            message: message.trim(),
+            repository: path.basename(repoPath),
+            repositoryName: path.basename(repoPath),
+            repositoryPath: repoPath,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`Git command failed for ${repoPath}:`, error);
+    }
+
+    return commits;
   }
 }
