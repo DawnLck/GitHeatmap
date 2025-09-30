@@ -357,7 +357,7 @@ function renderHeatmap(dataset) {
   const cells = [...dataset.cells].sort((a, b) => (a.date > b.date ? 1 : -1));
   const maxValue = cells.reduce((max, cell) => Math.max(max, cell.commits), 0);
   const palette = getPalette(dataset.summary?.colorScheme ?? "github");
-  const levels = [0, 1, 3, 6, 10];
+  const levels = [0, 5, 10, 15, 20];
 
   const repoCount = dataset.summary?.repositories ?? 0;
   const commitCount = dataset.summary?.totalCommits ?? 0;
