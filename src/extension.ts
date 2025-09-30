@@ -1,3 +1,21 @@
+/*
+ * Git Heatmap - VSCode Extension
+ * Copyright (C) 2025 Git Heatmap
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import * as path from "path";
 import * as vscode from "vscode";
 import { HeatmapPanel } from "./panel/heatmapPanel";
@@ -94,6 +112,34 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
 
+  const exportSVGCommand = vscode.commands.registerCommand(
+    "gitHeatmap.exportSVG",
+    async () => {
+      const panel = HeatmapPanel.getInstance();
+      if (panel) {
+        await panel.exportAsSVG();
+      } else {
+        void vscode.window.showWarningMessage(
+          "请先打开 Git Heatmap 面板（Git Heatmap: Show）后再导出。"
+        );
+      }
+    }
+  );
+
+  const exportPNGCommand = vscode.commands.registerCommand(
+    "gitHeatmap.exportPNG",
+    async () => {
+      const panel = HeatmapPanel.getInstance();
+      if (panel) {
+        await panel.exportAsPNG();
+      } else {
+        void vscode.window.showWarningMessage(
+          "请先打开 Git Heatmap 面板（Git Heatmap: Show）后再导出。"
+        );
+      }
+    }
+  );
+
   // Configuration change handler
   const configChangeHandler = vscode.workspace.onDidChangeConfiguration(
     (event) => {
@@ -130,6 +176,8 @@ export function activate(context: vscode.ExtensionContext): void {
     refreshCommand,
     selectRepositoriesCommand,
     resetFiltersCommand,
+    exportSVGCommand,
+    exportPNGCommand,
     configChangeHandler
   );
 }

@@ -1,4 +1,23 @@
+/*
+ * Git Heatmap - VSCode Extension
+ * Copyright (C) 2025 Git Heatmap
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import * as vscode from "vscode";
+import * as fs from "fs";
 import {
   HeatmapDataset,
   HeatmapFilterOptions,
@@ -90,6 +109,9 @@ export class HeatmapPanel {
         if (message?.command === "openCommitDiff") {
           void this.openCommitDiff(message.payload);
         }
+        if (message?.command === "exportData") {
+          void this.handleExportData(message.payload);
+        }
       },
       undefined,
       this.disposables
@@ -107,6 +129,13 @@ export class HeatmapPanel {
   }
 
   private async initializeFilters(): Promise<void> {
+    // Detect and send language setting
+    const language = this.getLanguage();
+    await this.postMessage({
+      command: "setLanguage",
+      payload: language,
+    });
+
     // Send current filters to frontend
     await this.postMessage({
       command: "filtersInitialized",
@@ -117,13 +146,40 @@ export class HeatmapPanel {
     await this.refresh();
   }
 
-  private async updateFilters(filters: HeatmapFilterOptions): Promise<void> {
+  private getLanguage(): string {
+    const config = vscode.workspace.getConfiguration("gitHeatmap");
+    const configLanguage = config.get<string>("language", "auto");
+
+    if (configLanguage === "auto") {
+      // Follow VS Code language
+      const vscodeLanguage = vscode.env.language;
+      // Map common language codes to our supported languages
+      if (vscodeLanguage.startsWith("zh")) {
+        return "zh-CN";
+      }
+      // Default to English for all other languages
+      return "en";
+    }
+
+    return configLanguage;
+  }
+
+  private async updateFilters(
+    filters: Partial<HeatmapFilterOptions>
+  ): Promise<void> {
     this.currentFilters = { ...this.currentFilters, ...filters };
 
     // Save the updated filters to persistence
     this.repositoryService.saveFilterSettings(this.currentFilters);
 
-    await this.refresh();
+    // Only refresh if filters other than colorScheme changed
+    // Color scheme changes are handled client-side for better performance
+    const filterKeys = Object.keys(filters);
+    const needsRefresh = filterKeys.some((key) => key !== "colorScheme");
+
+    if (needsRefresh) {
+      await this.refresh();
+    }
   }
 
   private async sendUserList(): Promise<void> {
@@ -205,6 +261,107 @@ export class HeatmapPanel {
     }
   }
 
+  public async exportAsSVG(): Promise<void> {
+    try {
+      // Request SVG data from webview
+      await this.postMessage({
+        command: "requestExportSVG",
+      });
+    } catch (error) {
+      console.error("Failed to initiate SVG export:", error);
+      void vscode.window.showErrorMessage("导出 SVG 失败");
+    }
+  }
+
+  public async exportAsPNG(): Promise<void> {
+    try {
+      // Request PNG data from webview
+      await this.postMessage({
+        command: "requestExportPNG",
+      });
+    } catch (error) {
+      console.error("Failed to initiate PNG export:", error);
+      void vscode.window.showErrorMessage("导出 PNG 失败");
+    }
+  }
+
+  private async handleExportData(payload: {
+    type: "svg" | "png";
+    data: string;
+  }): Promise<void> {
+    try {
+      const { type, data } = payload;
+
+      // Determine default save location
+      let defaultPath: vscode.Uri;
+      const fileName = `git-heatmap-${new Date()
+        .toISOString()
+        .slice(0, 10)}.${type}`;
+
+      // Try workspace folder first, then home directory
+      if (
+        vscode.workspace.workspaceFolders &&
+        vscode.workspace.workspaceFolders.length > 0
+      ) {
+        defaultPath = vscode.Uri.joinPath(
+          vscode.workspace.workspaceFolders[0].uri,
+          fileName
+        );
+      } else {
+        // Use home directory as fallback
+        const homeDir =
+          process.env.HOME || process.env.USERPROFILE || process.env.HOMEPATH;
+        if (homeDir) {
+          defaultPath = vscode.Uri.file(`${homeDir}/${fileName}`);
+        } else {
+          // Last resort: current working directory
+          defaultPath = vscode.Uri.file(fileName);
+        }
+      }
+
+      // Show save dialog
+      const fileUri = await vscode.window.showSaveDialog({
+        defaultUri: defaultPath,
+        filters:
+          type === "svg" ? { "SVG 文件": ["svg"] } : { "PNG 图片": ["png"] },
+      });
+
+      if (!fileUri) {
+        return; // User cancelled
+      }
+
+      // Write file
+      if (type === "svg") {
+        // SVG is plain text
+        await fs.promises.writeFile(fileUri.fsPath, data, "utf8");
+      } else {
+        // PNG is base64 encoded
+        const base64Data = data.replace(/^data:image\/png;base64,/, "");
+        await fs.promises.writeFile(
+          fileUri.fsPath,
+          Buffer.from(base64Data, "base64")
+        );
+      }
+
+      // Show success message with option to open file
+      const action = await vscode.window.showInformationMessage(
+        `成功导出为 ${type.toUpperCase()}`,
+        "打开文件"
+      );
+
+      if (action === "打开文件") {
+        await vscode.commands.executeCommand("vscode.open", fileUri);
+      }
+    } catch (error) {
+      console.error("Failed to save export:", error);
+      void vscode.window.showErrorMessage(
+        `保存文件失败: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
   public async reloadFilterSettings(): Promise<void> {
     // Reload filter settings from persistence
     this.currentFilters = this.repositoryService.loadFilterSettings();
@@ -278,6 +435,9 @@ export class HeatmapPanel {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "media", "main.js")
     );
+    const commitPanelUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "commitPanel.js")
+    );
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "media", "main.css")
     );
@@ -297,60 +457,75 @@ export class HeatmapPanel {
   <main class="container">
     <header class="header">
       <h1>Git Heatmap</h1>
-      <button id="refreshButton" type="button">Refresh</button>
+      <div class="header-actions">
+        <button id="exportButton" type="button" class="export-btn">Export</button>
+        <button id="refreshButton" type="button">Refresh</button>
+      </div>
     </header>
+    
+    <div id="exportMenu" class="export-menu" style="display: none;">
+      <button id="exportSVGBtn" type="button" class="export-menu-item">
+        📄 导出为 SVG
+      </button>
+      <button id="exportPNGBtn" type="button" class="export-menu-item">
+        🖼️ 导出为 PNG
+      </button>
+    </div>
     
     <section id="filters" class="filters">
       <div class="filter-row">
         <div class="filter-group">
-          <label for="timeRangeSelect">📅 时间范围</label>
+          <label for="timeRangeSelect" id="labelTimeRange">📅 Time Range</label>
           <select id="timeRangeSelect">
-            <option value="month">近一个月</option>
-            <option value="quarter">近三个月</option>
-            <option value="halfYear" selected>近六个月</option>
-            <option value="year">近一年</option>
+            <option value="month">Last Month</option>
+            <option value="quarter">Last Quarter</option>
+            <option value="halfYear" selected>Last Half Year</option>
+            <option value="year">Last Year</option>
           </select>
         </div>
         
         <div class="filter-group">
-          <label for="userFilterSelect">👤 用户筛选</label>
+          <label for="userFilterSelect" id="labelUserFilter">👤 User Filter</label>
           <select id="userFilterSelect">
-            <option value="current" selected>当前用户</option>
-            <option value="all">所有用户</option>
-            <option value="custom">自定义用户</option>
+            <option value="current" selected>Current User</option>
+            <option value="all">All Users</option>
+            <option value="custom">Custom User</option>
           </select>
         </div>
         
         <div class="filter-group" id="customUserGroup" style="display: none;">
-          <label for="customUserInput">用户</label>
-          <input type="text" id="customUserInput" placeholder="输入用户邮箱..." />
+          <label for="customUserInput" id="labelCustomUser">User</label>
+          <input type="text" id="customUserInput" placeholder="Enter user email..." />
         </div>
       </div>
       
       <details class="advanced-filters">
-        <summary>⚙️ 高级选项</summary>
+        <summary id="summaryAdvanced">⚙️ Advanced Options</summary>
         <div class="advanced-row">
           <div class="filter-group">
-            <label for="colorSchemeSelect">🎨 颜色主题</label>
+            <label for="colorSchemeSelect" id="labelColorScheme">🎨 Color Scheme</label>
             <select id="colorSchemeSelect">
               <option value="github" selected>GitHub</option>
-              <option value="blue">蓝色</option>
-              <option value="red">红色</option>
+              <option value="blue">Blue</option>
+              <option value="red">Red</option>
+              <option value="purple">Purple</option>
+              <option value="orange">Orange</option>
+              <option value="colorblind">Colorblind Friendly</option>
             </select>
           </div>
           
           <div class="filter-group">
-            <label for="dateSourceSelect">📍 日期源</label>
+            <label for="dateSourceSelect" id="labelDateSource">📍 Date Source</label>
             <select id="dateSourceSelect">
-              <option value="committer" selected>提交者日期</option>
-              <option value="author">作者日期</option>
+              <option value="committer" selected>Committer Date</option>
+              <option value="author">Author Date</option>
             </select>
           </div>
           
           <div class="filter-group checkbox-group">
-            <label>
+            <label id="labelIncludeMerges">
               <input type="checkbox" id="includeMerges" />
-              包含合并提交
+              Include Merge Commits
             </label>
           </div>
         </div>
@@ -359,17 +534,17 @@ export class HeatmapPanel {
     
     <section id="loading" class="loading" style="display: none;">
       <div class="loading-spinner"></div>
-      <span>正在加载数据...</span>
+      <span id="loadingText">Loading data...</span>
     </section>
     
     <section id="summary" class="summary"></section>
     <section id="heatmap" class="heatmap" aria-label="Contribution heatmap" role="grid"></section>
     <section id="commits" class="commits">
-      <h2>Recent Commits</h2>
+      <h2 id="commitsTitle">Recent Commits</h2>
       <div id="commitsList" class="commits-list"></div>
     </section>
   </main>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
 </body>
 </html>`;
   }
