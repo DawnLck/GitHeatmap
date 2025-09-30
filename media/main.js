@@ -1,11 +1,26 @@
 const vscode = acquireVsCodeApi();
 
+// Import i18n module
+import { t, setLanguage, updateUILanguage } from "./i18n.js";
+
+// Import commit panel module
+import {
+  initCommitPanel,
+  showCommitDetails,
+  closeDetailPanel,
+  isDetailPanelOpen,
+} from "./commitPanel.js";
+
 // DOM Elements
 const summaryElement = document.getElementById("summary");
 const heatmapElement = document.getElementById("heatmap");
 const commitsListElement = document.getElementById("commitsList");
 const loadingElement = document.getElementById("loading");
 const refreshButton = document.getElementById("refreshButton");
+const exportButton = document.getElementById("exportButton");
+const exportMenu = document.getElementById("exportMenu");
+const exportSVGBtn = document.getElementById("exportSVGBtn");
+const exportPNGBtn = document.getElementById("exportPNGBtn");
 
 // Filter Elements
 const timeRangeSelect = document.getElementById("timeRangeSelect");
@@ -27,12 +42,38 @@ let currentFilters = {
 };
 
 let userList = [];
-let detailPanelOpen = false;
-let currentDetailDate = null;
 
 // Event Listeners
 refreshButton?.addEventListener("click", () => {
   vscode.postMessage({ command: "refresh" });
+});
+
+// Export menu toggle
+exportButton?.addEventListener("click", () => {
+  exportMenu.style.display =
+    exportMenu.style.display === "none" ? "block" : "none";
+});
+
+// Close export menu when clicking outside
+document.addEventListener("click", (e) => {
+  if (
+    exportMenu &&
+    exportButton &&
+    !exportMenu.contains(e.target) &&
+    !exportButton.contains(e.target)
+  ) {
+    exportMenu.style.display = "none";
+  }
+});
+
+exportSVGBtn?.addEventListener("click", () => {
+  exportMenu.style.display = "none";
+  exportAsSVG();
+});
+
+exportPNGBtn?.addEventListener("click", () => {
+  exportMenu.style.display = "none";
+  exportAsPNG();
 });
 
 // Filter Event Listeners with debouncing
@@ -81,7 +122,20 @@ customUserInput?.addEventListener("input", (e) => {
 
 colorSchemeSelect?.addEventListener("change", (e) => {
   currentFilters.colorScheme = e.target.value;
-  updateFiltersDebounced();
+
+  // For color scheme changes, just re-render with existing data
+  // No need to fetch data from backend
+  if (currentDataset) {
+    // Update the color scheme in the dataset summary
+    currentDataset.summary.colorScheme = e.target.value;
+    renderHeatmap(currentDataset);
+  }
+
+  // Save the preference without refreshing
+  vscode.postMessage({
+    command: "updateFilters",
+    payload: { colorScheme: currentFilters.colorScheme },
+  });
 });
 
 dateSourceSelect?.addEventListener("change", (e) => {
@@ -106,6 +160,9 @@ window.addEventListener("message", (event) => {
   }
 
   switch (message.command) {
+    case "setLanguage":
+      setLanguage(message.payload);
+      break;
     case "filtersInitialized":
       initializeFilters(message.payload);
       break;
@@ -126,8 +183,24 @@ window.addEventListener("message", (event) => {
     case "commitsForDate":
       showCommitDetails(message.payload.date, message.payload.commits);
       break;
+    case "requestExportSVG":
+      handleExportSVGRequest();
+      break;
+    case "requestExportPNG":
+      handleExportPNGRequest();
+      break;
   }
 });
+
+// Set up i18n dataset renderer callback for language switching
+window.__i18nDatasetRenderer = () => {
+  if (currentDataset) {
+    renderHeatmap(currentDataset);
+  }
+};
+
+// Initialize commit panel module
+initCommitPanel(vscode);
 
 // Initialize
 vscode.postMessage({ command: "ready" });
@@ -200,7 +273,7 @@ function handleLoading(isLoading) {
 
   if (refreshButton) {
     refreshButton.disabled = isLoading;
-    refreshButton.textContent = isLoading ? "加载中..." : "Refresh";
+    refreshButton.textContent = isLoading ? t("refreshing") : t("refresh");
   }
 }
 
@@ -260,7 +333,6 @@ function showCellDetails(cell) {
   }
 
   // Request commits for this date from backend
-  currentDetailDate = date;
   vscode.postMessage({
     command: "getCommitsForDate",
     payload: date,
@@ -272,9 +344,12 @@ function renderHeatmap(dataset) {
 
   if (!dataset || !Array.isArray(dataset.cells)) {
     console.log("No valid dataset or cells array");
-    heatmapElement.innerHTML = '<p class="empty">No data available.</p>';
+    heatmapElement.innerHTML = `<p class="empty">${t("noData")}</p>`;
     return;
   }
+
+  // Store dataset for export
+  currentDataset = dataset;
 
   console.log(`Dataset has ${dataset.cells.length} cells`);
   console.log("Sample cells:", dataset.cells.slice(0, 5));
@@ -284,19 +359,18 @@ function renderHeatmap(dataset) {
   const palette = getPalette(dataset.summary?.colorScheme ?? "github");
   const levels = [0, 1, 3, 6, 10];
 
+  const repoCount = dataset.summary?.repositories ?? 0;
+  const commitCount = dataset.summary?.totalCommits ?? 0;
+  const repoLabel = repoCount === 1 ? t("repo") : t("repos");
+  const commitLabel = commitCount === 1 ? t("commit") : t("commits");
+  const timeRangeLabel = t("timeRange");
+
   summaryElement.innerHTML = `
-    <div class="summary__item"><span class="label">Repositories</span><span>${
-      dataset.summary?.repositories ?? 0
-    }</span></div>
-    <div class="summary__item"><span class="label">Commits</span><span>${
-      dataset.summary?.totalCommits ?? 0
-    }</span></div>
-    <div class="summary__item"><span class="label">Range</span><span>${
-      dataset.summary?.rangeStart ?? "?"
-    } → ${dataset.summary?.rangeEnd ?? "?"}</span></div>
-    <div class="summary__item"><span class="label">Metric</span><span>${
-      dataset.summary?.metric ?? "commits"
-    }</span></div>
+    <div class="summary__item"><span class="label">${repoLabel}</span><span>${repoCount}</span></div>
+    <div class="summary__item"><span class="label">${commitLabel}</span><span>${commitCount}</span></div>
+    <div class="summary__item"><span class="label">${timeRangeLabel}</span><span>${
+    dataset.summary?.rangeStart ?? "?"
+  } → ${dataset.summary?.rangeEnd ?? "?"}</span></div>
   `;
 
   // Create GitHub-style calendar heatmap
@@ -467,7 +541,7 @@ function createLegend(palette) {
   legend.className = "legend";
 
   const lessLabel = document.createElement("span");
-  lessLabel.textContent = "Less";
+  lessLabel.textContent = t("less");
   lessLabel.className = "legend-label";
   legend.appendChild(lessLabel);
 
@@ -479,7 +553,7 @@ function createLegend(palette) {
   });
 
   const moreLabel = document.createElement("span");
-  moreLabel.textContent = "More";
+  moreLabel.textContent = t("more");
   moreLabel.className = "legend-label";
   legend.appendChild(moreLabel);
 
@@ -508,8 +582,7 @@ function formatTooltip(date, commits) {
 
 function renderCommitsList(commits) {
   if (!commits || commits.length === 0) {
-    commitsListElement.innerHTML =
-      '<p class="empty">No commits found in the selected range.</p>';
+    commitsListElement.innerHTML = `<p class="empty">${t("noCommits")}</p>`;
     return;
   }
 
@@ -551,7 +624,9 @@ function renderCommitsList(commits) {
 }
 
 function showError(message) {
-  heatmapElement.innerHTML = `<p class="error">Error: ${message}</p>`;
+  heatmapElement.innerHTML = `<p class="error">${t(
+    "errorPrefix"
+  )}${message}</p>`;
   summaryElement.innerHTML = "";
   commitsListElement.innerHTML = "";
 }
@@ -562,155 +637,305 @@ function getPalette(name) {
       return ["#ebf5ff", "#bfdcff", "#7fb3ff", "#3b82f6", "#1d4ed8"];
     case "red":
       return ["#fde8e8", "#f8b4b4", "#f98080", "#f05252", "#c81e1e"];
+    case "purple":
+      return ["#f3e8ff", "#e9d5ff", "#c084fc", "#a855f7", "#7c3aed"];
+    case "orange":
+      return ["#fff7ed", "#fed7aa", "#fb923c", "#f97316", "#ea580c"];
     case "colorblind":
-      return ["#f7f7f7", "#c8e7ff", "#91d6ff", "#4fb3ff", "#2183c6"];
+      // Orange-Blue gradient - friendly for red-green colorblind users
+      return ["#f0f0f0", "#ffffcc", "#ffeda0", "#feb24c", "#fd8d3c"];
     case "github":
     default:
       return ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"];
   }
 }
 
-// Show commit details panel
-function showCommitDetails(date, commits) {
-  if (!commits || commits.length === 0) {
+// Note: showCommitDetails, closeDetailPanel and related functions
+// are now handled by the commitPanel.js module
+
+// Export functions
+let currentDataset = null; // Store current dataset for export
+
+function exportAsSVG() {
+  handleExportSVGRequest();
+}
+
+function exportAsPNG() {
+  handleExportPNGRequest();
+}
+
+function handleExportSVGRequest() {
+  const calendar = document.querySelector(".calendar-container");
+  if (!calendar || !currentDataset) {
+    console.error("No heatmap data available for export");
     return;
   }
 
-  // Create or update detail panel
-  let detailPanel = document.getElementById("detailPanel");
+  const svgData = generateSVG(currentDataset);
+  vscode.postMessage({
+    command: "exportData",
+    payload: {
+      type: "svg",
+      data: svgData,
+    },
+  });
+}
 
-  if (!detailPanel) {
-    detailPanel = document.createElement("div");
-    detailPanel.id = "detailPanel";
-    detailPanel.className = "detail-panel";
-    document.body.appendChild(detailPanel);
+function handleExportPNGRequest() {
+  const calendar = document.querySelector(".calendar-container");
+  if (!calendar) {
+    console.error("No heatmap available for export");
+    return;
   }
 
-  // Format date for display
-  const dateObj = new Date(date);
-  const formattedDate = dateObj.toLocaleDateString(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  // Create a canvas and draw the heatmap
+  const canvas = document.createElement("canvas");
+  const scale = 2; // 2x for better quality
+  const rect = calendar.getBoundingClientRect();
 
-  // Build panel content
-  const commitItems = commits
-    .map(
-      (commit) => `
-    <div class="detail-commit-item">
-      <div class="detail-commit-header">
-        <span class="detail-commit-hash" data-hash="${
-          commit.hash
-        }" data-repo="${commit.repositoryPath}" title="${commit.hash}">${
-        commit.shortHash
-      }</span>
-        <span class="detail-commit-date">${formatCommitTime(commit.date)}</span>
-      </div>
-      <div class="detail-commit-message" title="${escapeHtml(
-        commit.message
-      )}">${escapeHtml(commit.message)}</div>
-      <div class="detail-commit-meta">
-        <span class="detail-commit-author">👤 ${escapeHtml(
-          commit.author
-        )}</span>
-        <span class="detail-commit-repo">📁 ${escapeHtml(
-          commit.repositoryName
-        )}</span>
-      </div>
-      <div class="detail-commit-actions">
-        <button class="action-btn view-diff-btn" data-hash="${
-          commit.hash
-        }" data-repo="${commit.repositoryPath}">
-          🔍 查看变更
-        </button>
-      </div>
-    </div>
-  `
-    )
-    .join("");
+  canvas.width = rect.width * scale;
+  canvas.height = rect.height * scale;
 
-  detailPanel.innerHTML = `
-    <div class="detail-panel-content">
-      <div class="detail-panel-header">
-        <div class="detail-panel-title">
-          <h3>📅 ${formattedDate}</h3>
-          <span class="detail-panel-count">${commits.length} 个提交</span>
-        </div>
-        <button class="detail-panel-close" id="closeDetailPanel">✕</button>
-      </div>
-      <div class="detail-panel-body">
-        ${commitItems}
-      </div>
-    </div>
-    <div class="detail-panel-backdrop"></div>
-  `;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
 
-  // Add event listeners
-  const closeBtn = document.getElementById("closeDetailPanel");
-  const backdrop = detailPanel.querySelector(".detail-panel-backdrop");
+  // Draw white background
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, rect.width, rect.height);
 
-  closeBtn.addEventListener("click", closeDetailPanel);
-  backdrop.addEventListener("click", closeDetailPanel);
-
-  // Add view diff button listeners
-  const viewDiffBtns = detailPanel.querySelectorAll(".view-diff-btn");
-  viewDiffBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const hash = btn.dataset.hash;
-      const repo = btn.dataset.repo;
+  // Use html2canvas-like approach: render DOM to canvas
+  renderDOMToCanvas(calendar, ctx)
+    .then(() => {
+      const pngData = canvas.toDataURL("image/png");
       vscode.postMessage({
-        command: "openCommitDiff",
-        payload: { hash, repositoryPath: repo },
+        command: "exportData",
+        payload: {
+          type: "png",
+          data: pngData,
+        },
       });
+    })
+    .catch((err) => {
+      console.error("Failed to generate PNG:", err);
     });
-  });
-
-  // Show the panel
-  detailPanel.classList.add("open");
-  detailPanelOpen = true;
-
-  // Prevent body scrolling
-  document.body.style.overflow = "hidden";
 }
 
-function closeDetailPanel() {
-  const detailPanel = document.getElementById("detailPanel");
-  if (detailPanel) {
-    detailPanel.classList.remove("open");
-    detailPanelOpen = false;
-    currentDetailDate = null;
+function generateSVG(dataset) {
+  const { cells, summary } = dataset;
+  const palette = getPalette(summary.colorScheme);
+  const levels = [0, 1, 3, 6, 10];
 
-    // Restore body scrolling
-    document.body.style.overflow = "";
+  // Calculate SVG dimensions
+  const cellSize = 11;
+  const cellGap = 3;
+  const weekdayLabelWidth = 24;
+  const monthLabelHeight = 20;
+  const legendHeight = 40;
+  const padding = 20;
 
-    // Remove after animation
-    setTimeout(() => {
-      if (!detailPanelOpen) {
-        detailPanel.remove();
+  // Prepare data
+  const dataMap = new Map();
+  cells.forEach((cell) => {
+    dataMap.set(cell.date, cell.commits);
+  });
+
+  const startDate = new Date(summary.rangeStart);
+  const endDate = new Date(summary.rangeEnd);
+  const startSunday = new Date(startDate);
+  startSunday.setDate(startDate.getDate() - startDate.getDay());
+
+  const daysDiff = Math.ceil((endDate - startSunday) / (1000 * 60 * 60 * 24));
+  const weeksNeeded = Math.ceil(daysDiff / 7);
+
+  const gridWidth = weeksNeeded * (cellSize + cellGap);
+  const gridHeight = 7 * (cellSize + cellGap);
+
+  // Ensure minimum width for title and summary text
+  const minWidth = 260; // Minimum width to accommodate text
+  const calculatedWidth = weekdayLabelWidth + gridWidth + padding * 2;
+  const totalWidth = Math.max(minWidth, calculatedWidth);
+  const totalHeight =
+    monthLabelHeight + gridHeight + legendHeight + padding * 2 + 80; // +80 for title, summary and bottom date range
+
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${totalWidth}" height="${totalHeight}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .title { font-size: 16px; font-weight: 600; fill: #24292e; }
+      .summary-text { font-size: 11px; fill: #586069; }
+      .month-label { font-size: 10px; fill: #586069; }
+      .weekday-label { font-size: 9px; fill: #586069; }
+      .legend-label { font-size: 11px; fill: #586069; }
+      .calendar-cell { stroke: rgba(0,0,0,0.05); stroke-width: 1; }
+    </style>
+  </defs>
+  
+  <!-- Title and Summary -->
+  <text x="${padding}" y="${padding + 15}" class="title">${t("title")}</text>
+  <text x="${padding}" y="${padding + 35}" class="summary-text">${
+    summary.repositories
+  } ${summary.repositories === 1 ? t("repo") : t("repos")} · ${
+    summary.totalCommits
+  } ${summary.totalCommits === 1 ? t("commit") : t("commits")}</text>
+  
+  <!-- Calendar -->
+  <g transform="translate(${padding}, ${padding + 50})">`;
+
+  // Month labels
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  let currentMonth = -1;
+
+  for (let week = 0; week < weeksNeeded; week++) {
+    const weekDate = new Date(startSunday);
+    weekDate.setDate(startSunday.getDate() + week * 7);
+    const monthIndex = weekDate.getMonth();
+
+    if (monthIndex !== currentMonth && weekDate.getDate() <= 7) {
+      const x = weekdayLabelWidth + week * (cellSize + cellGap);
+      svg += `
+    <text x="${x}" y="10" class="month-label">${months[monthIndex]}</text>`;
+      currentMonth = monthIndex;
+    }
+  }
+
+  // Weekday labels
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  for (let day = 0; day < 7; day++) {
+    if (day % 2 === 1) {
+      // Show Mon, Wed, Fri
+      const y =
+        monthLabelHeight + day * (cellSize + cellGap) + cellSize / 2 + 3;
+      svg += `
+    <text x="0" y="${y}" class="weekday-label" text-anchor="start">${weekdays[day]}</text>`;
+    }
+  }
+
+  // Calendar cells
+  for (let week = 0; week < weeksNeeded; week++) {
+    for (let day = 0; day < 7; day++) {
+      const currentDate = new Date(startSunday);
+      currentDate.setDate(startSunday.getDate() + week * 7 + day);
+
+      if (currentDate <= endDate) {
+        const dateStr = formatDate(currentDate);
+        const commits = dataMap.get(dateStr) || 0;
+        const level = levels.findIndex((threshold) => commits <= threshold);
+        const bucket = level === -1 ? levels.length : Math.max(level - 1, 0);
+        const color = palette[Math.min(bucket, palette.length - 1)];
+
+        const x = weekdayLabelWidth + week * (cellSize + cellGap);
+        const y = monthLabelHeight + day * (cellSize + cellGap);
+
+        svg += `
+    <rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" rx="2" fill="${color}" class="calendar-cell">
+      <title>${formatDate(currentDate)}: ${commits} ${
+          commits === 1 ? "commit" : "commits"
+        }</title>
+    </rect>`;
       }
-    }, 300);
+    }
   }
+
+  // Legend
+  const legendY = monthLabelHeight + gridHeight + 20;
+  svg += `
+    <g transform="translate(${
+      gridWidth + weekdayLabelWidth - 140
+    }, ${legendY})">
+      <text x="0" y="10" class="legend-label">${t("less")}</text>`;
+
+  palette.forEach((color, i) => {
+    const x = 35 + i * (cellSize + cellGap);
+    svg += `
+      <rect x="${x}" y="0" width="${cellSize}" height="${cellSize}" rx="2" fill="${color}" class="calendar-cell"/>`;
+  });
+
+  svg += `
+      <text x="${
+        35 + palette.length * (cellSize + cellGap) + 5
+      }" y="10" class="legend-label">${t("more")}</text>
+    </g>`;
+
+  // Date range at the bottom
+  const dateRangeY = legendY + 35;
+  const dateRangeText = `${summary.rangeStart} → ${summary.rangeEnd}`;
+  svg += `
+    <text x="${
+      gridWidth / 2 + weekdayLabelWidth / 2
+    }" y="${dateRangeY}" class="summary-text" text-anchor="middle">📅 ${dateRangeText}</text>`;
+
+  svg += `
+  </g>
+</svg>`;
+
+  return svg;
 }
 
-function formatCommitTime(isoDate) {
-  const date = new Date(isoDate);
-  return date.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
+async function renderDOMToCanvas(element, ctx) {
+  // Simple DOM to Canvas renderer
+  // This is a simplified version - for production, use html2canvas library
+  return new Promise((resolve) => {
+    const cells = element.querySelectorAll(".calendar-cell:not(.empty-cell)");
+    const weekLabels = element.querySelectorAll(".weekday-label");
+    const monthLabels = element.querySelectorAll(".month-label");
+
+    const cellSize = 11;
+    const cellGap = 3;
+    const offsetX = 24;
+    const offsetY = 20;
+
+    // Draw month labels
+    ctx.font = "10px -apple-system, sans-serif";
+    ctx.fillStyle = "#586069";
+    monthLabels.forEach((label, index) => {
+      if (label.textContent.trim()) {
+        ctx.fillText(
+          label.textContent,
+          offsetX + index * (cellSize + cellGap),
+          12
+        );
+      }
+    });
+
+    // Draw weekday labels
+    weekLabels.forEach((label, index) => {
+      if (label.textContent.trim()) {
+        const y = offsetY + Math.floor(index / 2) * 2 * (cellSize + cellGap);
+        ctx.fillText(label.textContent, 0, y + cellSize / 2 + 3);
+      }
+    });
+
+    // Draw cells
+    cells.forEach((cell) => {
+      const rect = cell.getBoundingClientRect();
+      const parentRect = element.getBoundingClientRect();
+      const x = rect.left - parentRect.left;
+      const y = rect.top - parentRect.top;
+      const color = window.getComputedStyle(cell).backgroundColor;
+
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, cellSize, cellSize);
+
+      // Border
+      ctx.strokeStyle = "rgba(0,0,0,0.1)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, cellSize, cellSize);
+    });
+
+    resolve();
   });
 }
-
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-// Close detail panel on ESC key
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && detailPanelOpen) {
-    closeDetailPanel();
-  }
-});

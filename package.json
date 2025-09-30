@@ -2,13 +2,13 @@
   "name": "git-heatmap",
   "displayName": "Git Heatmap",
   "description": "Visualize local Git activity with a GitHub-style heatmap inside VS Code.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "InfiniteEcho",
   "repository": {
     "type": "git",
     "url": "https://github.com/DawnLck/GitHeatmap"
   },
-  "license": "MIT",
+  "license": "GPL-3.0",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -41,6 +41,16 @@
       {
         "command": "gitHeatmap.resetFilters",
         "title": "Git Heatmap: Reset Filter Settings",
+        "category": "Git Heatmap"
+      },
+      {
+        "command": "gitHeatmap.exportSVG",
+        "title": "Git Heatmap: Export as SVG",
+        "category": "Git Heatmap"
+      },
+      {
+        "command": "gitHeatmap.exportPNG",
+        "title": "Git Heatmap: Export as PNG",
         "category": "Git Heatmap"
       }
     ],
@@ -81,10 +91,12 @@
             "github",
             "blue",
             "red",
+            "purple",
+            "orange",
             "colorblind"
           ],
           "default": "github",
-          "markdownDescription": "Color palette for the heatmap. `github` matches GitHub's green scale by default."
+          "markdownDescription": "Color palette for the heatmap. `github` matches GitHub's green scale. `colorblind` uses orange gradient for accessibility."
         },
         "gitHeatmap.includeMerges": {
           "type": "boolean",
@@ -108,12 +120,12 @@
         "gitHeatmap.statusBar.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "在状态栏显示近7天的Git活动指示器"
+          "markdownDescription": "Show a Git activity indicator for the last 7 days in the status bar."
         },
         "gitHeatmap.statusBar.updateInterval": {
           "type": "number",
           "default": 300000,
-          "markdownDescription": "状态栏更新间隔(毫秒)，默认5分钟"
+          "markdownDescription": "Status bar update interval (milliseconds), default is 5 minutes."
         },
         "gitHeatmap.statusBar.displayMode": {
           "type": "string",
@@ -122,7 +134,22 @@
             "week"
           ],
           "default": "week",
-          "markdownDescription": "状态栏显示模式：today(今日) 或 week(本周)"
+          "markdownDescription": "Status bar display mode: 'today' (today's activity) or 'week' (this week's activity)."
+        },
+        "gitHeatmap.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "en",
+            "zh-CN"
+          ],
+          "default": "auto",
+          "markdownDescription": "UI language. `auto` follows VS Code language, `en` for English, `zh-CN` for Simplified Chinese. Default is English if auto-detected language is not supported."
+        },
+        "gitHeatmap.statusBar.showAchievements": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show encouraging notifications when reaching new activity levels. Adds a gamification element to make coding more fun! 🎉"
         }
       }
     },

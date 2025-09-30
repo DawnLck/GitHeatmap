@@ -1,3 +1,21 @@
+/*
+ * Git Heatmap - VSCode Extension
+ * Copyright (C) 2025 Git Heatmap
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import * as vscode from "vscode";
 import { RepositoryService, CommitInfo } from "../services/repositoryService";
 
@@ -11,6 +29,7 @@ export class GitActivityStatusBar {
   private updateTimer: NodeJS.Timeout | undefined;
   private readonly DAYS_TO_SHOW = 7;
   private displayMode: "today" | "week" = "week";
+  private currentLanguage: string = "en";
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -37,14 +56,31 @@ export class GitActivityStatusBar {
 
   public async updateActivity(): Promise<void> {
     try {
-      // Get display mode from configuration
+      // Get configuration
       const config = vscode.workspace.getConfiguration("gitHeatmap");
       this.displayMode = config.get<"today" | "week">(
         "statusBar.displayMode",
         "week"
       );
 
+      // Detect language
+      this.currentLanguage = this.detectLanguage();
+
       const activityData = await this.getLast7DaysActivity();
+      const today = this.formatLocalDate(new Date());
+      const todayData = activityData.find((d) => d.date === today);
+      const todayCommits = todayData?.commits || 0;
+      const weekCommits = activityData.reduce(
+        (sum, day) => sum + day.commits,
+        0
+      );
+
+      const commits = this.displayMode === "today" ? todayCommits : weekCommits;
+      const currentLevel = this.getActivityLevel(commits);
+
+      // Check for achievement
+      await this.checkAchievement(currentLevel, commits);
+
       const displayText = this.renderActivityDisplay(activityData);
       const tooltip = this.getTooltipText(activityData);
 
@@ -124,10 +160,21 @@ export class GitActivityStatusBar {
 
   private getActivityLevel(commits: number): number {
     if (commits === 0) return 0;
-    if (commits <= 2) return 1;
-    if (commits <= 5) return 2;
-    if (commits <= 9) return 3;
-    return 4;
+
+    // Different thresholds for different time ranges
+    if (this.displayMode === "today") {
+      // Today (1 day) - lower thresholds
+      if (commits <= 1) return 1; // 1 commit = low
+      if (commits <= 3) return 2; // 2-3 commits = medium
+      if (commits <= 5) return 3; // 4-5 commits = high
+      return 4; // 6+ commits = very high
+    } else {
+      // Week (7 days) - higher thresholds
+      if (commits <= 3) return 1; // 1-3 commits = low (~0.4/day)
+      if (commits <= 10) return 2; // 4-10 commits = medium (~1.4/day)
+      if (commits <= 20) return 3; // 11-20 commits = high (~2.8/day)
+      return 4; // 21+ commits = very high (3+/day)
+    }
   }
 
   private getActivityIcon(level: number): string {
@@ -135,7 +182,7 @@ export class GitActivityStatusBar {
     const icons = [
       "$(git-commit)", // 0 commits - basic git icon
       "$(git-commit)", // 1-2 commits - same icon
-      "$(git-commit)", // 3-5 commits - same icon
+      "$(sparkle)", // 3-5 commits - same icon
       "$(flame)", // 6-9 commits - flame for high activity
       "$(rocket)", // 10+ commits - rocket for very high activity
     ];
@@ -219,6 +266,106 @@ export class GitActivityStatusBar {
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
+  }
+
+  private detectLanguage(): string {
+    const config = vscode.workspace.getConfiguration("gitHeatmap");
+    const configLanguage = config.get<string>("language", "auto");
+
+    if (configLanguage === "auto") {
+      const vscodeLanguage = vscode.env.language;
+      if (vscodeLanguage.startsWith("zh")) {
+        return "zh-CN";
+      }
+      return "en";
+    }
+
+    return configLanguage;
+  }
+
+  private async checkAchievement(
+    currentLevel: number,
+    commits: number
+  ): Promise<void> {
+    const config = vscode.workspace.getConfiguration("gitHeatmap");
+    const showAchievements = config.get<boolean>(
+      "statusBar.showAchievements",
+      true
+    );
+
+    if (!showAchievements || currentLevel === 0) {
+      return;
+    }
+
+    // Get storage key based on display mode and current date/week
+    const storageKey = this.getAchievementStorageKey();
+    const previousLevel = this.context.workspaceState.get<number>(
+      storageKey,
+      0
+    );
+
+    // Only notify when level increases
+    if (currentLevel > previousLevel) {
+      const message = this.getAchievementMessage(currentLevel, commits);
+      void vscode.window.showInformationMessage(message);
+
+      // Update stored level
+      await this.context.workspaceState.update(storageKey, currentLevel);
+    }
+  }
+
+  private getAchievementStorageKey(): string {
+    const today = this.formatLocalDate(new Date());
+
+    if (this.displayMode === "today") {
+      // Reset daily
+      return `achievement.today.${today}`;
+    } else {
+      // Reset weekly (use ISO week number)
+      const date = new Date();
+      const weekNumber = this.getWeekNumber(date);
+      const year = date.getFullYear();
+      return `achievement.week.${year}.${weekNumber}`;
+    }
+  }
+
+  private getWeekNumber(date: Date): number {
+    const d = new Date(
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+    );
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  }
+
+  private getAchievementMessage(level: number, commits: number): string {
+    const timeLabel =
+      this.displayMode === "today"
+        ? this.currentLanguage === "zh-CN"
+          ? "今天"
+          : "today"
+        : this.currentLanguage === "zh-CN"
+        ? "本周"
+        : "this week";
+
+    const messages = {
+      en: {
+        1: `🎯 First commit ${timeLabel}! Every journey begins with a single step. Keep it up!`,
+        2: `✨ ${commits} commits ${timeLabel}! You're building momentum. Great progress!`,
+        3: `🔥 ${commits} commits ${timeLabel}! You're on fire! Your dedication is impressive!`,
+        4: `🚀 ${commits} commits ${timeLabel}! Outstanding achievement! You're absolutely crushing it! 🎉`,
+      },
+      "zh-CN": {
+        1: `🎯 ${timeLabel}第一次提交！千里之行，始于足下。继续加油！`,
+        2: `✨ ${timeLabel}已有 ${commits} 次提交！你正在积累动力。进展不错！`,
+        3: `🔥 ${timeLabel}已有 ${commits} 次提交！你的状态火热！专注度令人印象深刻！`,
+        4: `🚀 ${timeLabel}已有 ${commits} 次提交！成就卓越！你简直太棒了！🎉`,
+      },
+    };
+
+    const lang = this.currentLanguage === "zh-CN" ? "zh-CN" : "en";
+    return messages[lang][level as keyof typeof messages.en] || "";
   }
 
   public dispose(): void {
