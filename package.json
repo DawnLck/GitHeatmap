@@ -2,7 +2,7 @@
   "name": "git-heatmap",
   "displayName": "Git Heatmap",
   "description": "Visualize local Git activity with a GitHub-style heatmap inside VS Code.",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "InfiniteEcho",
   "repository": {
     "type": "git",
