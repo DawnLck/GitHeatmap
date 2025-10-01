@@ -7,6 +7,12 @@ Git Heatmap surfaces a GitHub-style contribution calendar directly inside Visual
 ![Main Interface](images/heatmap-main.png)
 _Git Heatmap main interface - GitHub-style contribution calendar_
 
+![Multiple Color Schemes](images/colors.png)
+_Multiple color schemes available_
+
+![Multiple Date Range Options](images/dates-range.png)
+_Flexible date range selection: choose from the last month, quarter, half-year, or full year to suit different analysis needs_
+
 ![Status Bar Activity](images/status-bar-activity.png)
 _Status bar showing last 7 days of Git activity_
 

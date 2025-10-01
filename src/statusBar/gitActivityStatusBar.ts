@@ -164,15 +164,15 @@ export class GitActivityStatusBar {
     // Different thresholds for different time ranges
     if (this.displayMode === "today") {
       // Today (1 day) - lower thresholds
-      if (commits <= 1) return 1; // 1 commit = low
-      if (commits <= 3) return 2; // 2-3 commits = medium
-      if (commits <= 5) return 3; // 4-5 commits = high
+      if (commits <= 5) return 1; // 1 commit = low
+      if (commits <= 10) return 2; // 2-3 commits = medium
+      if (commits <= 15) return 3; // 4-5 commits = high
       return 4; // 6+ commits = very high
     } else {
       // Week (7 days) - higher thresholds
-      if (commits <= 3) return 1; // 1-3 commits = low (~0.4/day)
-      if (commits <= 10) return 2; // 4-10 commits = medium (~1.4/day)
-      if (commits <= 20) return 3; // 11-20 commits = high (~2.8/day)
+      if (commits <= 10) return 1; // 1-3 commits = low (~0.4/day)
+      if (commits <= 20) return 2; // 4-10 commits = medium (~1.4/day)
+      if (commits <= 30) return 3; // 11-20 commits = high (~2.8/day)
       return 4; // 21+ commits = very high (3+/day)
     }
   }
